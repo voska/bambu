@@ -1,0 +1,2 @@
+{"type": "filament", "name": "fdm_filament_common", "from": "system", "instantiation": "false",
+ "filament_density": ["0"], "nozzle_temperature": ["200", "200"], "fan_max_speed": ["100"], "filament_flow_ratio": ["1", "1"]}

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bambu — Bambu Lab LAN CLI for Humans and AI Agents</title>
+  <meta name="description" content="bambu is an open-source CLI for Bambu Lab 3D printers in LAN mode: headless slicing with Bambu Studio presets, safety preflight, LAN send, monitoring and camera snapshots. JSON output and stable exit codes for AI agents.">
+  <meta name="keywords" content="Bambu Lab CLI, Bambu Studio CLI, headless slicing, X1 Carbon LAN mode, Developer Mode, 3D printer automation, AI agent 3D printing, MQTT FTPS Bambu">
+  <link rel="canonical" href="https://voska.github.io/bambu/">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#09090b">
+  <meta name="author" content="Matt Voska">
+
+  <meta property="og:title" content="bambu — Bambu Lab LAN CLI">
+  <meta property="og:description" content="Slice, check, send and monitor Bambu Lab prints over LAN. Built for humans and AI agents.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://voska.github.io/bambu/">
+  <meta property="og:site_name" content="bambu CLI">
+  <meta property="og:image" content="https://voska.github.io/bambu/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="bambu — Bambu Lab LAN CLI">
+  <meta name="twitter:description" content="Slice, check, send and monitor Bambu Lab prints over LAN. Built for humans and AI agents.">
+  <meta name="twitter:image" content="https://voska.github.io/bambu/og.png">
+
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="llms" href="llms.txt" type="text/plain">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "bambu",
+    "alternateName": "bambu CLI",
+    "description": "An open-source command-line interface for Bambu Lab 3D printers in LAN mode with Developer Mode. It slices headlessly with the Bambu Studio CLI and correctly resolved system presets, runs safety preflight gates, sends jobs over FTPS and MQTT, monitors prints and grabs camera frames. JSON output and stable exit codes make it safe for AI agents.",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Command Line Tool",
+    "operatingSystem": "macOS, Linux, Windows",
+    "softwareVersion": "0.1.0",
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://voska.github.io/bambu/",
+    "downloadUrl": "https://github.com/voska/bambu/releases",
+    "codeRepository": "https://github.com/voska/bambu",
+    "programmingLanguage": "Go",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "author": { "@type": "Person", "name": "voska", "url": "https://github.com/voska" },
+    "featureList": [
+      "Headless slicing with Bambu Studio system presets (inherits/include resolved)",
+      "Recipes and validated --set overrides",
+      "Safety preflight: idle printer, filament type and amount, plate, nozzle, Developer Mode",
+      "LAN send with FTPS upload, MD5 read-back and a verified project_file command",
+      "Streaming status and monitor with layer snapshots and exit codes by outcome",
+      "JSON / TSV / quiet output, schema introspection, OS keychain credentials"
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "What is the bambu CLI?", "acceptedAnswer": { "@type": "Answer", "text": "bambu is a free, open-source command-line tool that slices models with the Bambu Studio CLI, checks the printer with safety gates, sends jobs over the local network and monitors them, for Bambu Lab printers in LAN mode with Developer Mode enabled." } },
+      { "@type": "Question", "name": "How do I install bambu?", "acceptedAnswer": { "@type": "Answer", "text": "brew install voska/tap/bambu, or go install github.com/voska/bambu/cmd/bambu@latest, or download a binary from GitHub Releases." } },
+      { "@type": "Question", "name": "Can AI agents use bambu safely?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every command has --json output and stable exit codes, print send requires --confirm plus a passing preflight, --dry-run shows the exact payload, and no command changes printer settings. Agents should only pass --confirm after a human approves the job and confirms the plate is clear." } },
+      { "@type": "Question", "name": "Does bambu need Bambu Cloud?", "acceptedAnswer": { "@type": "Answer", "text": "No. It talks to the printer directly over MQTT and FTPS on your LAN. Since the 2025 Authorization Control firmware, sending jobs from third-party tools requires LAN Only mode with Developer Mode, which disconnects the printer from Bambu Cloud." } }
+    ]
+  }
+  </script>
+  <style>
+    :root { --bg:#09090b; --panel:#111114; --border:#27272a; --text:#e4e4e7; --muted:#a1a1aa; --brand:#10b981; --brand2:#34d399; --warn:#fbbf24; --red:#f87171; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; }
+    a { color:var(--brand2); text-decoration:none; } a:hover { text-decoration:underline; }
+    code, pre, .mono { font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace; }
+    nav { position:sticky; top:0; backdrop-filter:blur(8px); background:rgba(9,9,11,.8); border-bottom:1px solid var(--border); z-index:10; }
+    .wrap { max-width:1040px; margin:0 auto; padding:0 24px; }
+    nav .wrap { display:flex; align-items:center; justify-content:space-between; height:56px; }
+    nav .links a { color:var(--muted); margin-left:20px; font-size:14px; }
+    .brand { font-weight:800; font-size:18px; color:var(--text); }
+    header { text-align:center; padding:88px 0 56px; background:radial-gradient(ellipse at top, rgba(16,185,129,.18), transparent 60%); }
+    .eyebrow { color:var(--brand); font-size:13px; letter-spacing:.12em; text-transform:uppercase; font-weight:600; }
+    h1 { font-size:clamp(40px,6vw,64px); line-height:1.05; margin:14px 0 18px; letter-spacing:-.02em; }
+    h1 span { background:linear-gradient(90deg,var(--brand2),#22d3ee); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .lead { color:var(--muted); font-size:19px; max-width:680px; margin:0 auto 28px; }
+    .install { display:inline-flex; gap:12px; align-items:center; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 16px; font-size:15px; }
+    .install button { background:var(--brand); color:#04130d; border:0; border-radius:6px; padding:6px 12px; font-weight:700; cursor:pointer; }
+    .term { background:#0c0c0f; border:1px solid var(--border); border-radius:12px; overflow:hidden; text-align:left; margin:40px auto 0; max-width:860px; }
+    .term .bar { display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); }
+    .term .bar i { width:11px; height:11px; border-radius:50%; display:block; }
+    .term pre { margin:0; padding:18px 20px; font-size:13.5px; line-height:1.55; overflow-x:auto; white-space:pre; }
+    .p { color:var(--brand); } .c { color:#e4e4e7; } .f { color:#93c5fd; } .d { color:#71717a; } .g { color:var(--brand2); } .w { color:var(--warn); }
+    section { padding:64px 0; border-top:1px solid #18181b; }
+    h2 { font-size:30px; margin:0 0 8px; letter-spacing:-.01em; }
+    .sub { color:var(--muted); margin:0 0 28px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:20px; }
+    .card h3 { margin:0 0 6px; font-size:17px; } .card p { margin:0; color:var(--muted); font-size:15px; }
+    pre.block { background:#0c0c0f; border:1px solid var(--border); border-radius:10px; padding:16px 18px; overflow-x:auto; font-size:13.5px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; } td, th { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; } th { color:var(--muted); font-weight:600; }
+    footer { color:var(--muted); font-size:14px; padding:40px 0 60px; border-top:1px solid #18181b; }
+    html, body { overflow-x:hidden; }
+    .term, pre.block { max-width:100%; }
+    @media (max-width: 640px) {
+      nav .links a:not(:last-child) { display:none; }
+      header { padding:56px 0 40px; }
+      .lead { font-size:17px; }
+      .install { flex-wrap:wrap; justify-content:center; font-size:13px; }
+      .term pre, pre.block { font-size:12px; }
+    }
+    details { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px 18px; margin-bottom:10px; } summary { cursor:pointer; font-weight:600; }
+  </style>
+</head>
+<body>
+  <nav><div class="wrap">
+    <a class="brand mono" href="#">bambu</a>
+    <div class="links"><a href="#features">Features</a><a href="#install">Install</a><a href="#quickstart">Quick start</a><a href="#agents">Agents</a><a href="#faq">FAQ</a><a href="https://github.com/voska/bambu">GitHub</a></div>
+  </div></nav>
+
+  <header><div class="wrap">
+    <div class="eyebrow">Open-source CLI · LAN only · MIT</div>
+    <h1><span>Bambu Lab prints</span><br>from your terminal</h1>
+    <p class="lead">Slice headlessly with Bambu Studio presets, run safety preflight, send over LAN, monitor, and grab camera frames. Built for humans and AI agents.</p>
+    <div class="install mono"><span>brew install voska/tap/bambu</span><button onclick="navigator.clipboard.writeText('brew install voska/tap/bambu');this.textContent='copied'">copy</button></div>
+    <div class="term">
+      <div class="bar"><i style="background:#f85149"></i><i style="background:#fbbf24"></i><i style="background:#10b981"></i></div>
+<pre><span class="p">$</span> <span class="c">bambu slice bracket.stl</span> <span class="f">--recipe</span> functional-petg
+<span class="g">sliced</span>  bracket-functional-petg
+  time      35m 38s   filament  13.22 g PETG (GFG00)   layers 113
+  temps     bed 70 C (textured_plate)   nozzle 252 C
+
+<span class="p">$</span> <span class="c">bambu print send</span> bracket-functional-petg.gcode.3mf <span class="f">--slot</span> A2 <span class="f">--dry-run</span>
+preflight <span class="g">PASS</span>  (workshop, slot A2)
+  [<span class="g">PASS</span>] printer_idle       state=IDLE
+  [<span class="g">PASS</span>] filament_type      slot A2=PETG file=PETG
+  [<span class="w">WARN</span>] filament_amount    slot A2 remaining unknown; job needs 13.2 g
+  [<span class="g">PASS</span>] bed_type           file=textured_plate installed=textured_plate
+<span class="w">DRY RUN</span> nothing sent
+
+<span class="p">$</span> <span class="c">bambu print send</span> bracket-functional-petg.gcode.3mf <span class="f">--slot</span> A2 <span class="f">--confirm</span>
+<span class="g">sent</span> bracket-functional-petg.gcode.3mf on workshop: <span class="g">PREPARE</span></pre>
+    </div>
+  </div></header>
+
+  <section id="features"><div class="wrap">
+    <h2>What it does</h2>
+    <p class="sub">One static binary. No cloud account. Talks MQTT and FTPS directly to your printer.</p>
+    <div class="grid">
+      <div class="card"><h3>Headless slicing that's actually right</h3><p>The Bambu Studio CLI ignores preset inheritance — unflattened presets slice for a generic 200×200 bed. bambu resolves presets exactly like Bambu Studio, per model and nozzle.</p></div>
+      <div class="card"><h3>Recipes + validated overrides</h3><p>prototype-pla, solid-pla, functional-pla, functional-petg. <code>--set key=value</code> for any setting; typos are rejected; 100% infill patterns are fixed automatically. No brims unless you ask.</p></div>
+      <div class="card"><h3>Safety preflight</h3><p>Idle printer, no blocking HMS errors, Developer Mode, SD card, sliced for this printer, nozzle, plate, filament type and amount in the chosen AMS slot, temperatures.</p></div>
+      <div class="card"><h3>Verified LAN send</h3><p>FTPS upload with MD5 read-back, then the project_file command with bed leveling, flow calibration and first-layer inspection on. Requires <code>--confirm</code>.</p></div>
+      <div class="card"><h3>Monitor with outcomes</h3><p>NDJSON events, a layer-N camera snapshot, an <code>--exec</code> hook, and exit codes for finished / failed / paused / timeout. Informational HMS codes don't cry wolf.</p></div>
+      <div class="card"><h3>Agent-ready</h3><p><code>--json</code> everywhere, <code>schema</code> introspection, stable exit codes, hints on every error, keychain credentials, and an agent skill in the repo.</p></div>
+    </div>
+  </div></section>
+
+  <section id="install"><div class="wrap">
+    <h2>Install</h2>
+    <pre class="block"><span class="d"># macOS / Linux</span>
+brew install voska/tap/bambu
+
+<span class="d"># Go (any platform)</span>
+go install github.com/voska/bambu/cmd/bambu@latest
+
+<span class="d"># Binaries</span>
+https://github.com/voska/bambu/releases</pre>
+    <p class="sub">Needs Bambu Studio (for slicing) and ffmpeg (for snapshots). The printer must be in <b>LAN Only mode with Developer Mode</b> (Settings → LAN Only) — Bambu's firmware requires it for third-party control since 2025.</p>
+  </div></section>
+
+  <section id="quickstart"><div class="wrap">
+    <h2>Quick start</h2>
+    <pre class="block">bambu printer add workshop <span class="f">--host</span> 192.168.1.50 <span class="f">--serial</span> 00M00A000000000 <span class="f">--model</span> X1C
+echo "&lt;access code&gt;" | bambu auth set workshop      <span class="d"># OS keychain, verified read-only</span>
+bambu status
+bambu slice part.3mf <span class="f">--recipe</span> solid-pla
+bambu camera snapshot <span class="f">-o</span> plate.jpg
+bambu print send part-solid-pla.gcode.3mf <span class="f">--slot</span> 1 <span class="f">--dry-run</span>
+bambu print send part-solid-pla.gcode.3mf <span class="f">--slot</span> 1 <span class="f">--confirm</span>
+bambu monitor <span class="f">--snapshot-at-layer</span> 2</pre>
+  </div></section>
+
+  <section id="agents"><div class="wrap">
+    <h2>For AI agents</h2>
+    <p class="sub">Give your agent the skill, and keep a human on <code>--confirm</code>.</p>
+    <pre class="block">bambu schema --json            <span class="d"># full command tree</span>
+bambu status --json            <span class="d"># errors.blocking, AMS trays, dev_mode</span>
+bambu print send f.gcode.3mf --slot A2 --dry-run --json
+bambu monitor --json           <span class="d"># NDJSON; exit 0 finish · 12 failed · 13 paused · 14 timeout</span></pre>
+    <table><tr><th>code</th><th>meaning</th><th>code</th><th>meaning</th></tr>
+      <tr><td>0</td><td>success</td><td>8</td><td>retryable (unreachable)</td></tr>
+      <tr><td>2</td><td>usage</td><td>9</td><td>gate failed (preflight / --confirm / busy)</td></tr>
+      <tr><td>4</td><td>auth required / refused</td><td>11</td><td>slice failed</td></tr>
+      <tr><td>6</td><td>forbidden (Developer Mode off)</td><td>13</td><td>print paused — needs a human</td></tr>
+    </table>
+  </div></section>
+
+  <section id="faq"><div class="wrap">
+    <h2>FAQ</h2>
+    <details><summary>Does it work without Developer Mode?</summary><p>Status does. Sending, pausing and stopping need Developer Mode: since the January 2025 "Authorization Control" firmware, printers reject unsigned third-party commands. Developer Mode disconnects Bambu Cloud and the Handy app.</p></details>
+    <details><summary>Which printers are supported?</summary><p>Tested on an X1 Carbon. The X1, X1E, P1, A1, H2 and P2S series share the LAN protocol and should work; camera snapshots currently need an RTSPS camera (X1/H2/P2S series).</p></details>
+    <details><summary>Will it change my printer settings?</summary><p>No. There is no command that changes settings. Filament, plate and toggles are up to you.</p></details>
+    <details><summary>Is this affiliated with Bambu Lab?</summary><p>No. It's an independent MIT-licensed project that builds on public protocol documentation (OpenBambuAPI, ha-bambulab).</p></details>
+  </div></section>
+
+  <footer><div class="wrap">
+    <a href="https://github.com/voska/bambu">GitHub</a> · MIT License · by <a href="https://x.com/mattvoska">@mattvoska</a> · <a href="llms.txt">llms.txt</a>
+  </div></footer>
+</body>
+</html>

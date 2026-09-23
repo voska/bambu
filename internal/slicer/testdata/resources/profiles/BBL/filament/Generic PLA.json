@@ -1,0 +1,2 @@
+{"type": "filament", "name": "Generic PLA", "inherits": "fdm_filament_pla", "from": "system", "instantiation": "true",
+ "filament_id": "GFL99", "compatible_printers": ["Test Printer 0.4 nozzle", "Other Printer 0.4 nozzle"]}

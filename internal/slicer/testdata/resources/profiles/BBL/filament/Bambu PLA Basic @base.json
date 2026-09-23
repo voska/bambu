@@ -1,0 +1,2 @@
+{"type": "filament", "name": "Bambu PLA Basic @base", "inherits": "fdm_filament_pla", "from": "system", "instantiation": "false",
+ "filament_id": "GFA00", "filament_density": ["1.26"]}

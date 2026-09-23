@@ -1,0 +1,14 @@
+{
+  "description": "Fast fit/form test: PLA Basic, 0.20 Standard, 2 walls, 15% gyroid, no brim.",
+  "intent": "prototype",
+  "material": "PLA",
+  "process": "0.20mm Standard",
+  "filament": "Bambu PLA Basic",
+  "process_overrides": {
+    "wall_loops": "2",
+    "sparse_infill_density": "15%",
+    "sparse_infill_pattern": "gyroid",
+    "brim_type": "no_brim"
+  },
+  "filament_overrides": {}
+}

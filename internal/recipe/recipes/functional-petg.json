@@ -1,0 +1,30 @@
+{
+  "description": "Strong PETG part: functional-pla geometry, 252 C nozzle, 70 C textured-plate bed, fan max 30% for layer adhesion (overhang fan left at the preset's 50%), no brim.",
+  "intent": "functional",
+  "material": "PETG",
+  "process": "0.20mm Standard",
+  "filament": "Bambu PETG Basic",
+  "process_overrides": {
+    "layer_height": "0.2",
+    "wall_loops": "6",
+    "line_width": "0.45",
+    "outer_wall_line_width": "0.45",
+    "inner_wall_line_width": "0.45",
+    "sparse_infill_line_width": "0.45",
+    "internal_solid_infill_line_width": "0.45",
+    "top_surface_line_width": "0.45",
+    "sparse_infill_density": "100%",
+    "sparse_infill_pattern": "zig-zag",
+    "top_shell_layers": "5",
+    "bottom_shell_layers": "5",
+    "elefant_foot_compensation": "0.15",
+    "brim_type": "no_brim"
+  },
+  "filament_overrides": {
+    "nozzle_temperature": "252",
+    "nozzle_temperature_initial_layer": "252",
+    "textured_plate_temp": "70",
+    "textured_plate_temp_initial_layer": "70",
+    "fan_max_speed": "30"
+  }
+}

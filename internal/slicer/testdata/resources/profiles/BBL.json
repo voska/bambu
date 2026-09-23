@@ -1,0 +1,26 @@
+{
+  "name": "Bambu Lab (synthetic test fixture — structure mirrors Bambu Studio, values are made up)",
+  "version": "0.0.0",
+  "machine_list": [
+    {"name": "fdm_machine_common", "sub_path": "machine/fdm_machine_common.json"},
+    {"name": "fdm_test_common", "sub_path": "machine/fdm_test_common.json"},
+    {"name": "Test Printer 0.4 nozzle template machine_start_gcode", "sub_path": "machine/Test Printer 0.4 nozzle template machine_start_gcode.json"},
+    {"name": "Test Printer 0.4 nozzle", "sub_path": "machine/Test Printer 0.4 nozzle.json"},
+    {"name": "Loop A", "sub_path": "machine/Loop A.json"},
+    {"name": "Loop B", "sub_path": "machine/Loop B.json"}
+  ],
+  "process_list": [
+    {"name": "fdm_process_common", "sub_path": "process/fdm_process_common.json"},
+    {"name": "0.20mm Standard @BBL TP", "sub_path": "process/0.20mm Standard @BBL TP.json"},
+    {"name": "0.20mm Standard @BBL Other", "sub_path": "process/0.20mm Standard @BBL Other.json"}
+  ],
+  "filament_list": [
+    {"name": "fdm_filament_common", "sub_path": "filament/fdm_filament_common.json"},
+    {"name": "fdm_filament_template_direct_dual", "sub_path": "filament/fdm_filament_template_direct_dual.json"},
+    {"name": "fdm_filament_pla", "sub_path": "filament/fdm_filament_pla.json"},
+    {"name": "Bambu PLA Basic @base", "sub_path": "filament/Bambu PLA Basic @base.json"},
+    {"name": "Bambu PLA Basic @BBL TP", "sub_path": "filament/Bambu PLA Basic @BBL TP.json"},
+    {"name": "Bambu PLA Basic @BBL Other", "sub_path": "filament/Bambu PLA Basic @BBL Other.json"},
+    {"name": "Generic PLA", "sub_path": "filament/Generic PLA.json"}
+  ]
+}

@@ -1,0 +1,3 @@
+{"type": "machine", "name": "fdm_machine_common", "from": "system", "instantiation": "false",
+ "printable_area": ["0x0", "200x0", "200x200", "0x200"], "printable_height": "100",
+ "machine_start_gcode": "G28 ; generic", "nozzle_diameter": ["0.4"], "printer_model": ""}

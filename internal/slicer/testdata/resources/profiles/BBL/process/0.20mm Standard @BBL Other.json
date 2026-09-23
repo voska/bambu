@@ -1,0 +1,2 @@
+{"type": "process", "name": "0.20mm Standard @BBL Other", "inherits": "fdm_process_common", "from": "system", "instantiation": "true",
+ "compatible_printers": ["Other Printer 0.4 nozzle"]}

@@ -1,0 +1,2 @@
+{"type": "machine", "name": "fdm_test_common", "inherits": "fdm_machine_common", "from": "system", "instantiation": "false",
+ "printable_area": ["0x0", "256x0", "256x256", "0x256"], "printable_height": "250", "nozzle_type": ["hardened_steel"]}

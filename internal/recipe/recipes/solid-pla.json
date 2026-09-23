@@ -1,0 +1,15 @@
+{
+  "description": "Solid PLA part: Generic PLA, 0.20 Standard, 6 walls (inner 0.45), 100% zig-zag, no brim.",
+  "intent": "functional",
+  "material": "PLA",
+  "process": "0.20mm Standard",
+  "filament": "Generic PLA",
+  "process_overrides": {
+    "wall_loops": "6",
+    "inner_wall_line_width": "0.45",
+    "sparse_infill_density": "100%",
+    "sparse_infill_pattern": "zig-zag",
+    "brim_type": "no_brim"
+  },
+  "filament_overrides": {}
+}

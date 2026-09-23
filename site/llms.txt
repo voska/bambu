@@ -1,0 +1,42 @@
+# bambu — Bambu Lab LAN CLI
+
+> CLI for Bambu Lab 3D printers in LAN mode with Developer Mode. For humans and AI agents.
+
+bambu is a free, open-source Go CLI. It slices models headlessly with the Bambu Studio CLI, resolving system presets correctly for the printer model and nozzle, and applies recipes plus validated overrides. It runs safety preflight gates, sends jobs over LAN (FTPS upload, MD5 read-back, MQTT project_file), streams status, monitors jobs with camera snapshots, and reports outcomes as exit codes.
+
+## Install
+- Homebrew: `brew install voska/tap/bambu`
+- Go: `go install github.com/voska/bambu/cmd/bambu@latest`
+- Binary: https://github.com/voska/bambu/releases
+- Needs: Bambu Studio (slicing), ffmpeg (snapshots); printer in LAN Only mode with Developer Mode on
+
+## Output Modes
+- Default: human text; hints/progress on stderr
+- `--json` / `-j`: JSON on stdout; NDJSON for `status --watch` and `monitor` (also BAMBU_JSON=1)
+- `--plain` / `-p`: tab-separated values
+- `--quiet` / `-q`: primary value only (state, file path, PASS/FAIL)
+- `--no-color`, `--no-input`
+
+## Commands
+- `bambu status [--watch]`: printer state, job, errors (blocking flag + HMS wiki links), temps, AMS trays, dev_mode
+- `bambu slice <model.stl|3mf|obj> --recipe R [--filament P] [--set k=v]`: headless slice to <name>.gcode.3mf + preview + summary
+- `bambu preflight <file> --slot S`: safety gates, PASS/WARN/FAIL (exit 9 on FAIL)
+- `bambu print send <file> --slot S (--dry-run | --confirm)`: upload + start; `print pause|resume|stop --confirm`
+- `bambu monitor [--snapshot-at-layer N] [--exec CMD] [--timeout D]`: follow a job; exit by outcome
+- `bambu camera snapshot [-o f.jpg]`: one frame (RTSPS; X1/H2/P2S series)
+- `bambu printer add|list|remove|default|discover`, `bambu auth set|status|remove`
+- `bambu recipe list|show`, `bambu slicer info`, `bambu schema`, `bambu exit-codes`, `bambu version`
+
+## Exit Codes
+0=success, 1=error, 2=usage, 3=empty, 4=auth, 5=not found, 6=forbidden (Developer Mode off), 8=retryable, 9=gate failed, 10=config, 11=slice failed, 12=print failed, 13=print paused, 14=timeout
+
+## Agent Integration
+- `--json` for structured output; errors are `{"error":{"code","name","message","hint"}}`
+- `bambu schema --json` for introspection
+- Never pass `--confirm` without explicit human approval of the exact file and a clear plate
+- Skill: https://github.com/voska/bambu/tree/main/skills/bambu
+
+## Links
+- Source: https://github.com/voska/bambu
+- Releases: https://github.com/voska/bambu/releases
+- License: MIT

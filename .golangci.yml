@@ -1,0 +1,52 @@
+version: "2"
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - errorlint
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosec
+    - bodyclose
+    - nilerr
+    - misspell
+    - revive
+    - wrapcheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+    revive:
+      rules:
+        - name: blank-imports
+        - name: errorf
+        - name: exported
+        - name: import-shadowing
+    wrapcheck:
+      ignore-package-globs:
+        - github.com/voska/bambu/*
+    gosec:
+      excludes:
+        - G204 # subprocess with variable args: the slicer/ffmpeg invocations are intentional and argument-validated
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [errcheck, gosec, wrapcheck, revive]
+      - path: internal/testutil/
+        linters: [errcheck, gosec, wrapcheck]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/voska/bambu

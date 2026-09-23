@@ -1,0 +1,63 @@
+version: 2
+
+builds:
+  - main: ./cmd/bambu
+    binary: bambu
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "^test:"
+
+brews:
+  - name: bambu
+    directory: Formula
+    homepage: "https://github.com/voska/bambu"
+    description: "Slice, check, send and monitor Bambu Lab prints over LAN, for humans and AI agents"
+    license: "MIT"
+    repository:
+      owner: voska
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: voska-bot
+      email: bot@voska.dev
+    install: |
+      bin.install "bambu"
+    test: |
+      system "#{bin}/bambu", "exit-codes", "--json"
+
+nfpms:
+  - package_name: bambu
+    homepage: "https://github.com/voska/bambu"
+    maintainer: "voska <hello@voska.dev>"
+    description: "Slice, check, send and monitor Bambu Lab prints over LAN, for humans and AI agents"
+    license: "MIT"
+    formats:
+      - deb
+      - rpm

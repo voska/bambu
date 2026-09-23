@@ -1,0 +1,3 @@
+{"type": "filament", "name": "Bambu PLA Basic @BBL TP", "inherits": "Bambu PLA Basic @base", "from": "system", "setting_id": "TF001",
+ "instantiation": "true", "include": ["fdm_filament_template_direct_dual"], "filament_flow_ratio": ["0.98", "0.98"],
+ "compatible_printers": ["Test Printer 0.4 nozzle"]}

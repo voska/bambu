@@ -1,0 +1,2 @@
+{"type": "filament", "name": "Bambu PLA Basic @BBL Other", "inherits": "Bambu PLA Basic @base", "from": "system", "instantiation": "true",
+ "compatible_printers": ["Other Printer 0.4 nozzle"]}
