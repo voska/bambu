@@ -49,11 +49,45 @@ func TestSummarize(t *testing.T) {
 	if len(s.Errors.HMS) != 1 || !s.Errors.HMS[0].Informational || s.Errors.Blocking {
 		t.Fatalf("info HMS must not block: %+v", s.Errors)
 	}
-	if !s.Liveview || !s.SDCard || s.External != "" {
+	if s.Liveview == nil || !*s.Liveview || !s.SDCard || s.External != "" {
 		t.Fatalf("flags: %+v", s)
 	}
 	if s.Protections.FirstLayerInspector == nil || !*s.Protections.FirstLayerInspector {
 		t.Fatal("protections")
+	}
+}
+
+func TestLiveviewReportedState(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ipcam any
+		want  string
+	}{
+		{"missing", nil, "null"},
+		{"empty object", map[string]any{}, "null"},
+		{"null URL", map[string]any{"rtsp_url": nil}, "null"},
+		{"empty URL", map[string]any{"rtsp_url": ""}, "null"},
+		{"malformed URL", map[string]any{"rtsp_url": false}, "null"},
+		{"disabled", map[string]any{"rtsp_url": "disable"}, "false"},
+		{"advertised", map[string]any{"rtsp_url": "rtsps://192.0.2.1:322/streaming/live/1"}, "true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := map[string]any{}
+			if tc.ipcam != nil {
+				p["ipcam"] = tc.ipcam
+			}
+			b, err := json.Marshal(Summarize(p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var result map[string]json.RawMessage
+			if err := json.Unmarshal(b, &result); err != nil {
+				t.Fatal(err)
+			}
+			if got := string(result["camera_lan_liveview"]); got != tc.want {
+				t.Fatalf("camera_lan_liveview = %s, want %s", got, tc.want)
+			}
+		})
 	}
 }
 

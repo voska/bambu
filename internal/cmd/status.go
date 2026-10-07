@@ -146,8 +146,8 @@ func watch(g *Globals, conn printer.Conn) error {
 }
 
 func humanStatus(h *output.Human, p *config.Printer, s printer.Status) {
-	h.Line("%s %s  %s / %s   dev_mode=%s  sdcard=%v  liveview=%v", h.Bold(p.Name), h.Dim("("+p.Host+")"), h.Status(s.State), s.Stage,
-		h.Status(ptrBool(s.DevMode)), s.SDCard, s.Liveview)
+	h.Line("%s %s  %s / %s   dev_mode=%s  sdcard=%v  liveview=%s", h.Bold(p.Name), h.Dim("("+p.Host+")"), h.Status(s.State), s.Stage,
+		h.Status(ptrBool(s.DevMode)), s.SDCard, ptrBool(s.Liveview))
 	if s.Job.Name != "" {
 		h.Line("  job      %s  %d%%  layer %d/%d  %d min left", s.Job.Name, s.Job.Percent, s.Job.Layer, s.Job.TotalLayers, s.Job.RemainingMin)
 	}

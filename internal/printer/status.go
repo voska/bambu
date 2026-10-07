@@ -30,7 +30,7 @@ type Status struct {
 	Protections Protections `json:"protections"`
 	DevMode     *bool       `json:"dev_mode"`
 	SDCard      bool        `json:"sdcard"`
-	Liveview    bool        `json:"camera_lan_liveview"`
+	Liveview    *bool       `json:"camera_lan_liveview"` // nil when no nonempty string was reported
 	WifiSignal  string      `json:"wifi_signal,omitempty"`
 }
 
@@ -193,8 +193,14 @@ func Summarize(p map[string]any) Status {
 		PrintingMonitor: boolp(x["printing_monitor"]), BuildplateMarkerDetector: boolp(x["buildplate_marker_detector"]),
 		PrintHalt: boolp(x["print_halt"]), HaltSensitivity: str(x["halt_print_sensitivity"]),
 	}
-	rtsp := str(obj(p["ipcam"])["rtsp_url"])
-	s.Liveview = rtsp != "" && rtsp != "disable"
+	// Missing, null, empty or malformed telemetry does not establish that
+	// the printer's LAN live-view setting is disabled. Preserve unknown just
+	// as we do for dev_mode and protection flags. An advertised route is
+	// not proof that a camera connection or frame capture will succeed.
+	if rtsp, ok := obj(p["ipcam"])["rtsp_url"].(string); ok && rtsp != "" {
+		enabled := rtsp != "disable"
+		s.Liveview = &enabled
+	}
 	return s
 }
 
