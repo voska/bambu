@@ -6,6 +6,8 @@ JSON field names and exit codes are part of the public API.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-06
+
 ### Changed
 - `status` JSON `camera_lan_liveview` is now nullable: absent, null, empty or malformed `ipcam.rtsp_url` reports produce `null` (human output: `unknown`), not a false disabled-setting claim. Explicit `disable` remains `false`; a nonempty advertised route remains `true`. Consumers must handle the new unknown state. No printer settings are changed. Fixes #1.
 
