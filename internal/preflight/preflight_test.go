@@ -38,7 +38,7 @@ func run(t *testing.T, o testutil.Opts, slot int, mut func(*printer.Status)) Res
 	if mut != nil {
 		mut(&s)
 	}
-	return Run(Input{Printer: shop, Job: j, Status: s, TrayID: slot, FTPSCheck: func() error { return nil }})
+	return Run(Input{Printer: shop, Job: j, Status: s, TrayIDs: []int{slot}, FTPSCheck: func() error { return nil }})
 }
 
 func status(r Result, gate string) string {
@@ -122,8 +122,86 @@ func TestFamilyWarn(t *testing.T) {
 
 func TestFTPSFailure(t *testing.T) {
 	j, _ := job.Inspect(testutil.Write(t, t.TempDir(), "p", testutil.Opts{}), 1)
-	r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayID: 0, FTPSCheck: func() error { return errors.New("login refused") }})
+	r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayIDs: []int{0}, FTPSCheck: func() error { return errors.New("login refused") }})
 	if !slices.Contains(r.Failed, "ftps_login") {
 		t.Fatal("ftps failure must FAIL")
+	}
+}
+
+func runTwo(t *testing.T, trays []int, mut func(*printer.Status)) Result {
+	t.Helper()
+	// recorded two-filament slice: Generic PLA (GFL99) 16.98 g, then PLA Matte (GFA01) 3.12 g from layer 21
+	j, err := job.Inspect(testutil.FromDir(t, "../job/testdata/two_filament", t.TempDir(), "two"), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := idleStatus(t)
+	if mut != nil {
+		mut(&s)
+	}
+	return Run(Input{Printer: shop, Job: j, Status: s, TrayIDs: trays, FTPSCheck: func() error { return nil }})
+}
+
+func gateFor(r Result, gate string, filament int) *Gate {
+	for i := range r.Gates {
+		if r.Gates[i].Gate == gate && r.Gates[i].Filament == filament {
+			return &r.Gates[i]
+		}
+	}
+	return nil
+}
+
+func TestTwoFilaments(t *testing.T) {
+	// A4 = Generic PLA GFL99 (remaining unknown), A1 = PLA Matte GFA01 ~330 g
+	r := runTwo(t, []int{3, 0}, nil)
+	if r.Result != Pass || !slices.Equal(r.Slots, []string{"A4", "A1"}) || !slices.Equal(r.TrayIDs, []int{3, 0}) || r.Slot != "A4" || r.TrayID != 3 {
+		t.Fatalf("want PASS on A4+A1: %+v", r)
+	}
+	if !slices.Equal(r.Warnings, []string{"filament_amount"}) || gateFor(r, "filament_amount", 1).Status != Warn {
+		t.Fatalf("only A4's unknown amount should WARN: %+v", r.Gates)
+	}
+	for _, g := range []string{"filament_type", "filament_profile", "filament_amount", "nozzle_temp"} {
+		if gateFor(r, g, 1) == nil || gateFor(r, g, 2) == nil {
+			t.Errorf("%s must run once per filament: %+v", g, r.Gates)
+		}
+	}
+	if d := gateFor(r, "filament_amount", 2).Detail; d != "slot A1 ~330 g (33%); job needs 3.1 g (+15%, +5 g)" {
+		t.Errorf("filament 2 is checked against A1: %q", d)
+	}
+}
+
+func TestTwoFilamentFailures(t *testing.T) {
+	cases := []struct {
+		name     string
+		trays    []int
+		mut      func(*printer.Status)
+		gate     string
+		filament int
+	}{
+		{"one slot for two filaments", []int{3}, nil, "single_filament", 0},
+		{"second slot empty", []int{3, 1}, nil, "tray", 2},
+		{"second slot too low", []int{3, 2}, func(s *printer.Status) { g := 2; s.AMS[2].RemainG = &g }, "filament_amount", 2},
+		{"second slot wrong material", []int{3, 0}, func(s *printer.Status) { s.AMS[0].Type = "PETG" }, "filament_type", 2},
+	}
+	for _, c := range cases {
+		r := runTwo(t, c.trays, c.mut)
+		if g := gateFor(r, c.gate, c.filament); r.Result != Fail || g == nil || g.Status != Fail {
+			t.Errorf("%s: want FAIL on %s (filament %d), got %+v", c.name, c.gate, c.filament, r.Gates)
+		}
+	}
+	if d := gateFor(runTwo(t, []int{3}, nil), "single_filament", 0).Detail; d != "2 filaments in plate, 1 slot given" {
+		t.Errorf("detail: %q", d)
+	}
+}
+
+func TestSingleFilamentGatesUnchanged(t *testing.T) {
+	r := run(t, testutil.Opts{}, 0, nil)
+	for _, g := range r.Gates {
+		if g.Filament != 0 {
+			t.Fatalf("single-filament gates carry no filament number: %+v", g)
+		}
+	}
+	if !slices.Equal(r.Slots, []string{"A1"}) || !slices.Equal(r.TrayIDs, []int{0}) || r.Slot != "A1" || r.TrayID != 0 {
+		t.Fatalf("%+v", r)
 	}
 }

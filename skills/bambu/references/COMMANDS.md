@@ -52,6 +52,16 @@ Save one camera frame as JPEG (X1/H2/P2S series; needs ffmpeg and LAN Mode Livev
 
 Print the exit code table.
 
+### `bambu filament load`
+
+Unload the toolhead and load an AMS slot: a remote colour change at a pause (requires --confirm).
+
+| flag | type | default | help |
+|---|---|---|---|
+| `--slot, -s` | string |  | AMS slot to load: 1-4 (first AMS) or A1-D4. (required) |
+| `--confirm` | bool |  | Required: the printer cuts the filament in the toolhead, loads the slot and purges. Only as part of an approved job. |
+| `--timeout` | time.Duration | 5m | How long to wait for the printer to report the slot loaded (exit 14 if it doesn't). |
+
 ### `bambu monitor`
 
 Follow the current job until it ends; exit code reflects the outcome.
@@ -70,7 +80,7 @@ Run the safety gates for a sliced file (read-only).
 
 | flag | type | default | help |
 |---|---|---|---|
-| `--slot, -s` | string |  | AMS slot: 1-4 (first AMS) or A1-D4. (required) |
+| `--slot, -s` | []string |  | AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1). (required) |
 | `--no-ftp` | bool |  | Skip the FTPS login check. |
 
 ### `bambu print pause`
@@ -88,6 +98,7 @@ Resume a paused job (requires --confirm).
 | flag | type | default | help |
 |---|---|---|---|
 | `--confirm` | bool |  | Required: only resume once the cause of the pause is fixed. |
+| `--wait` | time.Duration | 30s | How long to wait for the printer to report RUNNING (exit 14 if it doesn't). |
 
 ### `bambu print send <file>`
 
@@ -95,7 +106,7 @@ Upload a sliced file and start it (requires --confirm and a passing preflight).
 
 | flag | type | default | help |
 |---|---|---|---|
-| `--slot, -s` | string |  | AMS slot: 1-4 (first AMS) or A1-D4. (required) |
+| `--slot, -s` | []string |  | AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1). (required) |
 | `--confirm` | bool |  | Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear. |
 | `--dry-run, -n` | bool |  | Run preflight and show the exact upload path and MQTT payload; send nothing. |
 | `--timelapse` | bool |  | Record a timelapse. |
@@ -165,7 +176,9 @@ Slice a model headlessly with Bambu Studio and a recipe.
 | flag | type | default | help |
 |---|---|---|---|
 | `--recipe, -r` | string |  | Recipe name (see: bambu recipe list). (required) |
-| `--filament, -f` | string |  | Filament preset to use instead of the recipe's (e.g. "Generic PLA", "Bambu PLA Matte"). |
+| `--filament, -f` | []string |  | Filament preset to use instead of the recipe's (e.g. "Generic PLA", "Bambu PLA Matte"). Repeat once per filament, in print order, for a multi-colour job. |
+| `--color` | []string |  | Spool colour per --filament, same order (e.g. FFFFFF). Required with two or more filaments: Bambu Studio sizes the purge between them from the colours. |
+| `--filament-change-z` | []float64 |  | The next --filament starts on the first layer above Z mm (the top of the previous filament's last layer); the AMS swaps automatically. Once per filament after the first. |
 | `--set, -s` | []string |  | Override a Bambu Studio setting: key=value (repeatable). |
 | `--name, -n` | string |  | Output base name (default <model>-<recipe>). |
 | `--out, -o` | string |  | Output directory (default: config output_dir, else current dir). |

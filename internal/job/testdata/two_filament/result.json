@@ -1,0 +1,53 @@
+{
+ "return_code": 0,
+ "error_string": "Success.",
+ "sliced_plates": [
+  {
+   "filaments": [
+    {
+     "filament_id": "GFL99",
+     "id": 1,
+     "main_used_g": 16.01702308654785,
+     "total_used_g": 16.984750747680664
+    },
+    {
+     "filament_id": "GFA01",
+     "id": 2,
+     "main_used_g": 2.889824628829956,
+     "total_used_g": 3.118014097213745
+    }
+   ],
+   "feature_type_times": {
+    "Bottom surface": 159.02442932128906,
+    "Bridge": 272.9046630859375,
+    "Custom": 429.2455139160156,
+    "Flush": 109.39039611816406,
+    "Gap infill": 28.78656578063965,
+    "Inner wall": 94.23754119873047,
+    "Internal solid infill": 638.7852172851562,
+    "Outer wall": 151.09385681152344,
+    "Overhang wall": 0.5377050042152405,
+    "Prime tower": 115.01567840576172,
+    "Sparse infill": 292.5014953613281,
+    "Top surface": 207.865234375,
+    "Travel": 207.54945373535156,
+    "Undefined": 192.072998046875
+   },
+   "filament_change_times": 1,
+   "warning_message": "",
+   "objects": [
+    {
+     "name": "CadQuery Component",
+     "bbox": {
+      "depth": 98.40521240234375,
+      "height": 5.400000095367432,
+      "width": 98.40521240234375,
+      "x": 78.7973861694336,
+      "y": 78.79739379882812,
+      "z": 4.440892098500626e-16
+     }
+    }
+   ]
+  }
+ ]
+}

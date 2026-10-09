@@ -52,7 +52,7 @@ func TestInspectErrors(t *testing.T) {
 func TestProjectFileVerifiedPayload(t *testing.T) {
 	p := testutil.Write(t, t.TempDir(), "part", testutil.Opts{})
 	j, _ := Inspect(p, 1)
-	got := ProjectFile(j, RemoteName(p), 3, false)
+	got := ProjectFile(j, RemoteName(p), []int{3}, false)
 	want := map[string]any{
 		"command": "project_file", "param": "Metadata/plate_1.gcode", "url": "file:///sdcard/part.gcode.3mf",
 		"subtask_name": "part", "md5": j.GcodeMD5, "project_id": "0", "profile_id": "0", "task_id": "0", "subtask_id": "0",
@@ -66,10 +66,10 @@ func TestProjectFileVerifiedPayload(t *testing.T) {
 
 func TestAMSMapping(t *testing.T) {
 	j := &Job{FilamentPresets: []string{"a", "b", "c"}, Filaments: []Filament{{Index: 1}}}
-	if got := AMSMapping(j, 2); !reflect.DeepEqual(got, []int{-1, 2, -1}) {
+	if got := AMSMapping(j, []int{2}); !reflect.DeepEqual(got, []int{-1, 2, -1}) {
 		t.Fatal(got)
 	}
-	if got := AMSMapping(&Job{}, 0); !reflect.DeepEqual(got, []int{0}) {
+	if got := AMSMapping(&Job{}, []int{0}); !reflect.DeepEqual(got, []int{0}) {
 		t.Fatal(got)
 	}
 }
