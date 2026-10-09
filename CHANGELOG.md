@@ -33,6 +33,9 @@ JSON field names and exit codes are part of the public API.
 - `print resume --confirm` exited 0 even when the printer was still paused 3 s later. It now exits 0 only once the printer reports RUNNING (`--wait`, default 30s, must be positive; otherwise exit 14). It also refuses (exit 9) during a filament change, and on X1-series printers when the AMS reports an empty toolhead.
 - Per-filament temperatures in multi-filament 3MFs are read through `filament_self_index`/`filament_extruder_variant` instead of plain indexing, which reads the wrong row whenever an earlier filament has more than one nozzle-variant row.
 
+### Security
+- Upgrade transitive `golang.org/x/net` to v0.55.0 to address the HTML parser CPU denial of service vulnerability (CVE-2026-25680 / GHSA-5cv4-jp36-h3mw).
+
 ## [0.2.0] - 2026-10-06
 
 ### Changed
