@@ -105,3 +105,41 @@ func Write(t *testing.T, dir, name string, o Opts) string {
 	}
 	return path
 }
+
+// FromDir zips a recorded slice (plate_1.gcode, slice_info.config, project_settings.config, plate_1.json) from src
+// into <dir>/<name>.gcode.3mf with a matching plate_1.gcode.md5, and returns its path. result.json is the slicer's
+// own output, not part of the 3MF, and is skipped.
+func FromDir(t *testing.T, src, dir, name string) string {
+	t.Helper()
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, name+".gcode.3mf")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	for _, e := range entries {
+		if e.Name() == "result.json" {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(src, e.Name())) //nolint:gosec // test fixture
+		if err != nil {
+			t.Fatal(err)
+		}
+		w, _ := zw.Create("Metadata/" + e.Name())
+		_, _ = w.Write(b)
+		if e.Name() == "plate_1.gcode" {
+			sum := md5.Sum(b) //nolint:gosec // fixture
+			w, _ := zw.Create("Metadata/plate_1.gcode.md5")
+			_, _ = w.Write([]byte(hex.EncodeToString(sum[:])))
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

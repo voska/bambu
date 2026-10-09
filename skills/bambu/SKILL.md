@@ -31,10 +31,10 @@ bambu auth status --check --json && bambu slicer info --json
 
 ## Safety rules for agents (non-negotiable)
 
-1. **Never pass `--confirm` on your own.** `print send --confirm` starts a real print. Only use it after a human explicitly approved **this exact file** and confirmed **the plate is clear**. The same goes for `print pause|resume|stop --confirm`, except that pausing on a visible failure is acceptable (tell the human).
+1. **Never pass `--confirm` on your own.** `print send --confirm` starts a real print. Only use it after a human explicitly approved **this exact file** and confirmed **the plate is clear**. The same goes for `print pause|resume|stop --confirm` and `filament load --confirm`, except that pausing on a visible failure is acceptable (tell the human).
 2. **Always run `print send --dry-run` first.** It runs every preflight gate and shows the exact payload. Resolve FAILs and report WARNs.
 3. **Don't touch a busy printer.** If `status` isn't IDLE/FINISH/FAILED, a job is running; it may be the human's.
-4. `bambu` cannot and must not change printer settings. Ask the human for filament swaps, plate swaps and toggles.
+4. `bambu` cannot and must not change printer settings. Ask the human to load spools, swap plates and change toggles. Switching the toolhead between spools already in the AMS is `filament load`, only inside an approved job.
 
 ## Workflow
 
@@ -61,6 +61,19 @@ bambu monitor --snapshot-at-layer 2 --json                     # NDJSON events; 
 
 **Slots** are `1`–`4` (first AMS) or `A1`–`D4`. Preflight checks that the slot's filament type matches the sliced one.
 
+**Two colours, changing at a layer height** (the AMS swaps by itself, from the G-code):
+
+```bash
+bambu slice part.3mf --recipe prototype-pla --filament "Generic PLA" --color FFFFFF \
+  --filament "Bambu PLA Matte" --color 000000 --filament-change-z 4.0 --json   # Z must be a layer top
+bambu print send part-prototype-pla.gcode.3mf --slot A4 --slot A1 --dry-run --json  # one --slot per filament, in order
+```
+
+- Match each `--filament`/`--color` to the spool in the slot you'll map it to (`status`). If two PLA slots are swapped, only the profile WARNs show it, so check the order yourself.
+- Report each filament's `used_g` (with `waste_g` purge/prime tower) and `filament_changes` to the human. The preview PNG shows only the first filament's colour.
+
+**Colour change at a pause** (an approved job that pauses for a different spool): `bambu filament load --slot A1 --confirm --json` exits 0 only once A1 is in the toolhead. Check the camera, then `bambu print resume --confirm`, which exits 0 only once the printer reports RUNNING.
+
 ## Reading results
 
 - `status.errors.blocking` is the flag that matters. Informational HMS codes (e.g. `0C00_0300_0003_000B` "Inspecting first layer" around layer 2) are listed but don't block. Each HMS entry has a wiki `url`.
@@ -70,6 +83,7 @@ bambu monitor --snapshot-at-layer 2 --json                     # NDJSON events; 
   - 12: FAILED
   - 13: PAUSED (e.g. a first-layer or spaghetti halt; needs a human)
   - 14: `--timeout` hit while still printing
+- `filament load` and `print resume` exit 14 when the printer doesn't confirm in time. Don't resume after a failed load: look at the camera first.
 - Calibration before layer 1 can take about 8 minutes (layer stays 0). That's normal.
 
 ## Agent introspection

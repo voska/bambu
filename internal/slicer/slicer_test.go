@@ -2,13 +2,16 @@ package slicer
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/voska/bambu/internal/errfmt"
+	"github.com/voska/bambu/internal/job"
 	"github.com/voska/bambu/internal/recipe"
 	"github.com/voska/bambu/internal/testutil"
 )
@@ -117,11 +120,11 @@ func TestBuild(t *testing.T) {
 	if c.Process["brim_type"] != "no_brim" || c.Process["wall_loops"] != "4" {
 		t.Errorf("overrides: %v %v", c.Process["brim_type"], c.Process["wall_loops"])
 	}
-	nt := c.Filament["nozzle_temperature"].([]any)
+	nt := c.Filaments[0]["nozzle_temperature"].([]any)
 	if len(nt) != 2 || nt[0] != "215" || nt[1] != "215" {
 		t.Errorf("scalar must broadcast to array length: %v", nt)
 	}
-	if fm := c.Filament["fan_max_speed"].([]any); len(fm) != 1 || fm[0] != "30" {
+	if fm := c.Filaments[0]["fan_max_speed"].([]any); len(fm) != 1 || fm[0] != "30" {
 		t.Errorf("--set routed to filament: %v", fm)
 	}
 	if da := c.Process["default_acceleration"].([]any); da[1] != "6000" {
@@ -148,10 +151,14 @@ func TestBuildErrors(t *testing.T) {
 		t.Errorf("bad bed: %v", err)
 	}
 	rq := req(r)
-	rq.Filament = "Generic PLA"
+	rq.Filaments = []string{"Generic PLA"}
 	c, err := Build(ix, rq)
 	if err != nil || c.Presets["filament"] != "Generic PLA" {
 		t.Errorf("--filament override: %v %v", c, err)
+	}
+	rq.Filaments = []string{""}
+	if c, err := Build(ix, rq); err != nil || c.Presets["filament"] != "Bambu PLA Basic @BBL TP" {
+		t.Errorf(`--filament "" keeps the recipe's filament: %v %v`, c, err)
 	}
 }
 
@@ -174,9 +181,11 @@ func TestDiscoverEnv(t *testing.T) {
 }
 
 // fakeStudio emulates the Bambu Studio CLI: it copies a prepared 3MF to --outputdir/--export-3mf
-// and writes result.json, or fails like the real CLI when FAKE_FAIL is set.
+// and writes result.json (FAKE_RESULT's, if set), or fails like the real CLI when FAKE_FAIL is set.
+// It records its arguments, one per line, in FAKE_ARGS.
 const fakeStudio = `#!/bin/sh
 out=""; name=""
+[ -n "$FAKE_ARGS" ] && printf '%s\n' "$@" > "$FAKE_ARGS"
 while [ $# -gt 0 ]; do
   case "$1" in
     --outputdir) out="$2"; shift ;;
@@ -190,14 +199,25 @@ if [ -n "$FAKE_FAIL" ]; then
   exit 238
 fi
 cp "$FAKE_3MF" "$out/$name"
+if [ -n "$FAKE_RESULT" ]; then cp "$FAKE_RESULT" "$out/result.json"; exit 0; fi
 echo '{"return_code": 0, "error_string": "Success.", "sliced_plates": [{"warning_message": ""}]}' > "$out/result.json"
 `
+
+func readArgs(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(os.Getenv("FAKE_ARGS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
 
 func TestRunWithFakeStudio(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script fake")
 	}
 	dir := t.TempDir()
+	t.Setenv("FAKE_ARGS", filepath.Join(dir, "args"))
 	bin := filepath.Join(dir, "studio.sh")
 	_ = os.WriteFile(bin, []byte(fakeStudio), 0o755)
 	t.Setenv("FAKE_3MF", testutil.Write(t, dir, "prepared", testutil.Opts{}))
@@ -217,6 +237,13 @@ func TestRunWithFakeStudio(t *testing.T) {
 	if !filepath.IsAbs(sum.Gcode3MF) {
 		t.Fatal("output path must be absolute")
 	}
+	if args := readArgs(t); strings.Contains(args, "--filament-colour") || strings.Contains(args, "--load-custom-gcodes") ||
+		strings.Count(strings.Split(args, "--load-filaments\n")[1], ";") != 0 {
+		t.Fatalf("single filament: same Studio invocation as before:\n%s", args)
+	}
+	if len(sum.FilamentChanges) != 0 || sum.FilamentChanges == nil || !reflect.DeepEqual(sum.FilamentPresets, []string{"Bambu PLA Basic @BBL TP"}) {
+		t.Fatalf("%+v %+v", sum.FilamentChanges, sum.FilamentPresets)
+	}
 
 	t.Setenv("FAKE_FAIL", "1")
 	_, err = Run(context.Background(), st, index(t), rq)
@@ -229,5 +256,143 @@ func TestRunWithFakeStudio(t *testing.T) {
 	_ = os.WriteFile(rq.Model, []byte("ISO-10303-21;"), 0o600)
 	if _, err := Run(context.Background(), st, index(t), rq); errfmt.As(err).Code != errfmt.ExitUsage {
 		t.Fatalf("STEP must be rejected with usage: %v", err)
+	}
+}
+
+func TestNextLayerTop(t *testing.T) {
+	proc := map[string]any{"initial_layer_print_height": "0.2", "layer_height": "0.2"}
+	for z, want := range map[float64]float64{4.0: 4.2, 0.2: 0.4, 5.2: 5.4} {
+		if got, err := NextLayerTop(proc, z); err != nil || got != want {
+			t.Errorf("%g: %g %v", z, got, err)
+		}
+	}
+	for _, z := range []float64{4.1, 0.1} {
+		if _, err := NextLayerTop(proc, z); errfmt.As(err).Code != errfmt.ExitUsage {
+			t.Errorf("%g must be refused: %v", z, err)
+		}
+	}
+	_, err := NextLayerTop(proc, 4.1)
+	if e := errfmt.As(err); !strings.Contains(e.Message, "use 4 or 4.2") {
+		t.Errorf("suggest the neighbouring layer tops: %q", e.Message)
+	}
+	thick := map[string]any{"initial_layer_print_height": "0.3", "layer_height": "0.12"}
+	if got, err := NextLayerTop(thick, 0.54); err != nil || got != 0.66 {
+		t.Errorf("0.3 first layer, 0.12 after: %g %v", got, err)
+	}
+}
+
+func TestBuildTwoFilaments(t *testing.T) {
+	r := recipe.Recipe{Process: "0.20mm Standard", Filament: "Bambu PLA Basic", FilamentOverrides: map[string]any{"nozzle_temperature": "215"}}
+	rq := req(r, "fan_max_speed=30")
+	rq.Filaments = []string{"Generic PLA", "Bambu PLA Basic"}
+	c, err := Build(index(t), rq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Filaments) != 2 || c.Presets["filament"] != "Generic PLA" || !reflect.DeepEqual(c.FilamentPresets, []string{"Generic PLA", "Bambu PLA Basic @BBL TP"}) {
+		t.Fatalf("%v %v", c.Presets, c.FilamentPresets)
+	}
+	for i, f := range c.Filaments {
+		if fm := f["fan_max_speed"].([]any); fm[0] != "30" {
+			t.Errorf("filament %d: --set applies to every filament: %v", i+1, fm)
+		}
+		if nt := f["nozzle_temperature"].([]any); nt[0] != "215" {
+			t.Errorf("filament %d: recipe overrides apply to every filament: %v", i+1, nt)
+		}
+	}
+}
+
+// twoFilamentRun slices with the recorded two-filament 3MF and result.json standing in for Bambu Studio's output.
+func twoFilamentRun(t *testing.T, mut func(*Request)) (*Summary, Request, error) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script fake")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "studio.sh")
+	_ = os.WriteFile(bin, []byte(fakeStudio), 0o755)
+	t.Setenv("FAKE_ARGS", filepath.Join(dir, "args"))
+	t.Setenv("FAKE_3MF", testutil.FromDir(t, "../job/testdata/two_filament", dir, "prepared"))
+	result, _ := filepath.Abs("../job/testdata/two_filament/result.json") // the fake runs in the work dir
+	t.Setenv("FAKE_RESULT", result)
+	model := filepath.Join(dir, "part.3mf")
+	_ = os.WriteFile(model, []byte("PK"), 0o600)
+	rq := req(recipe.Recipe{Name: "t", Process: "0.20mm Standard", Filament: "Bambu PLA Basic"})
+	rq.Model, rq.Name, rq.OutDir, rq.WorkDir = model, "two", filepath.Join(dir, "out"), filepath.Join(dir, "work")
+	rq.Filaments, rq.Colors, rq.ChangeZs = []string{"Generic PLA", "Bambu PLA Basic"}, []string{"ffffff", "#000000"}, []float64{4.0}
+	if mut != nil {
+		mut(&rq)
+	}
+	sum, err := Run(context.Background(), &Studio{Binary: bin, Resources: "testdata/resources"}, index(t), rq)
+	return sum, rq, err
+}
+
+func TestRunTwoFilaments(t *testing.T) {
+	sum, rq, err := twoFilamentRun(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := readArgs(t)
+	for _, want := range []string{
+		"--load-filaments\n" + filepath.Join(rq.WorkDir, "filament.json") + ";" + filepath.Join(rq.WorkDir, "filament_2.json") + "\n",
+		"--filament-colour\n#FFFFFF;#000000\n",
+		"--load-custom-gcodes\n" + filepath.Join(rq.WorkDir, "custom_gcode.json") + "\n",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("Studio args missing %q:\n%s", want, args)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(rq.WorkDir, "custom_gcode.json"))
+	var cg map[string]any
+	_ = json.Unmarshal(b, &cg)
+	want := map[string]any{"mode": "MultiAsSingle", "gcodes": []any{map[string]any{
+		"type": "ToolChange", "print_z": 4.2, "extruder": float64(2), "color": "#000000", "extra": "",
+	}}}
+	if !reflect.DeepEqual(cg, want) {
+		t.Fatalf("custom G-code: the layer-slider change Studio stores (filament 2 from print_z 4.2):\n%s", b)
+	}
+	if !reflect.DeepEqual(sum.FilamentChanges, []job.FilamentChange{{Layer: 21, Z: 4.2, Filament: 2}}) || !sum.PrimeTower {
+		t.Fatalf("%+v prime_tower=%v", sum.FilamentChanges, sum.PrimeTower)
+	}
+	f1, f2 := sum.Filaments[0], sum.Filaments[1]
+	if *f1.ModelG != 16.02 || *f1.WasteG != 0.97 || *f2.ModelG != 2.89 || *f2.WasteG != 0.23 || f2.UsedG != 3.12 {
+		t.Fatalf("grams: %+v %+v", f1, f2)
+	}
+	if !exists(sum.Gcode3MF) {
+		t.Fatal("output missing")
+	}
+}
+
+func TestRunTwoFilamentsRefusedBeforeSlicing(t *testing.T) {
+	cases := map[string]func(*Request){
+		"no change height":        func(r *Request) { r.ChangeZs = nil },
+		"change height off-layer": func(r *Request) { r.ChangeZs = []float64{4.1} },
+		"one colour":              func(r *Request) { r.Colors = r.Colors[:1] },
+		"bad colour":              func(r *Request) { r.Colors[1] = "black" },
+		"heights not ascending": func(r *Request) {
+			r.Filaments, r.Colors, r.ChangeZs = append(r.Filaments, "Generic PLA"), append(r.Colors, "FF0000"), []float64{4.0, 2.0}
+		},
+		"change height, one filament": func(r *Request) { r.Filaments, r.Colors = r.Filaments[:1], nil },
+	}
+	for name, mut := range cases {
+		_, rq, err := twoFilamentRun(t, mut)
+		if errfmt.As(err).Code != errfmt.ExitUsage {
+			t.Errorf("%s: want usage error, got %v", name, err)
+		}
+		if exists(filepath.Join(rq.WorkDir, "result.json")) {
+			t.Errorf("%s: Studio must not run", name)
+		}
+	}
+}
+
+func TestRunTwoFilamentsChangeNotInGcode(t *testing.T) {
+	// the recorded G-code changes at Z 4.2; asking for a change after Z 3.0 must not pass as a good slice
+	_, rq, err := twoFilamentRun(t, func(r *Request) { r.ChangeZs = []float64{3.0} })
+	e := errfmt.As(err)
+	if e.Code != errfmt.ExitSliceFailed || !strings.Contains(e.Message, "filament change") {
+		t.Fatalf("want slice failure, got %v", err)
+	}
+	if exists(filepath.Join(rq.OutDir, "two.gcode.3mf")) || exists(filepath.Join(rq.OutDir, "two.summary.json")) {
+		t.Fatal("a slice without the asked-for change must not reach the output dir")
 	}
 }

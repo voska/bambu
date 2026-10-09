@@ -13,7 +13,9 @@ In v0.1:
 - Headless slicing (STL/3MF/OBJ) with Bambu Studio system presets, flattened by us, plus built-in and user recipes.
 - Preflight safety gates.
 - LAN send: implicit FTPS upload, read-back MD5, then the MQTT `project_file` command.
-- Pause / resume / stop.
+- Pause / resume / stop. `resume` succeeds only once the printer reports RUNNING.
+- Two-filament jobs: a layer-height colour change that the AMS performs from the G-code, one `--slot` per filament.
+- `filament load`: a remote AMS colour change while paused (the manual route when the second colour isn't in the job).
 - Status, and a streaming `status --watch`.
 - `monitor` with a layer-N snapshot and an exec hook.
 - Camera snapshot for RTSPS models (X1/X1E/H2/P2S/X2D) via ffmpeg.
@@ -21,7 +23,7 @@ In v0.1:
 
 Out of scope for v0.1:
 - Cloud API and Bambu Connect.
-- Multi-material/multi-color send: preflight refuses jobs with more than one filament.
+- Per-object or painted multi-colour slicing: `slice` makes multi-filament jobs only from layer-height changes.
 - STEP input (convert to STL/3MF first).
 - The P1/A1 camera, which uses the port-6000 JPEG protocol: a clear error for now.
 - Changing any printer setting. `bambu` never changes printer settings: no xcam/AI toggles, no lights, no temperatures.
@@ -49,9 +51,11 @@ Top-level verbs are kept for the high-frequency, single-purpose actions an opera
 ```
 bambu status [--watch]                       # read-only; --watch streams NDJSON until Ctrl-C
 bambu slice <model> --recipe R [--filament PRESET] [--set k=v]... [--name N] [--out DIR] [--auto-orient]
-bambu preflight <file.gcode.3mf> --slot S [--no-ftp]
-bambu print send <file.gcode.3mf> --slot S (--dry-run | --confirm) [--timelapse] [--wait 180s]
-bambu print pause|resume|stop --confirm
+bambu preflight <file.gcode.3mf> --slot S [--slot S2]... [--no-ftp]
+bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm) [--timelapse] [--wait 180s]
+bambu print pause|stop --confirm
+bambu print resume --confirm [--wait 30s]     # exit 0 only once the printer reports RUNNING
+bambu filament load --slot S --confirm [--timeout 5m]  # paused or idle; exit 0 only once S is in the toolhead
 bambu monitor [--snapshot-at-layer N] [--snapshot-dir D] [--exec CMD] [--timeout 2h]
 bambu camera snapshot [-o file.jpg]
 bambu printer add <name> --host H --serial S [--model X1C] [--nozzle 0.4] [--plate textured_plate] [--default]
@@ -155,6 +159,15 @@ Precedence:
 
 **Control:** `{"print":{"sequence_id":"<n>","command":"pause"|"resume"|"stop","param":""}}` at QoS 1.
 
+**Filament load** (Bambu Studio `command_ams_change_filament`; verified against X1C firmware 01.12 on 2026-10-08 during a
+pause, A4 → A1): `{"print":{"sequence_id":"<n>","command":"ams_change_filament","ams_id":A,"slot_id":S,"target":A*4+S,
+"curr_temp":<mid of loaded tray's range>,"tar_temp":<mid of target tray's range>}}` (210 when a tray has no range).
+Done when `ams.tray_now` is the target and `ams_status >> 8` is no longer `0x01` (filament_change) nor the stage a
+loading/unloading one.
+
+**Two-filament `ams_mapping`:** one entry per project filament in filament order, e.g. `[3, 0]` for A4 then A1
+(Studio's "v0" format, `SelectMachine.cpp`). Not yet verified on a real print.
+
 **HMS:**
 - Code = `%04X_%04X_%04X_%04X` of attr>>16, attr&0xFFFF, code>>16, code&0xFFFF.
 - Module = attr>>24; severity = code>>16 (1 fatal, 2 serious, 3 common, 4 info).
@@ -188,6 +201,11 @@ Resources are the first of `../Resources`, `../resources`, `../share/BambuStudio
 **Invocation:**
 - Absolute `--outputdir` (a work dir under the user cache). Bambu Studio chdirs into its bundle, so relative paths break.
 - `--slice 0 --arrange 1 --orient 0|1 --load-settings "m.json;p.json" --load-filaments f.json --export-3mf <name>.gcode.3mf <model>`
+- Two or more filaments: `--load-filaments "f.json;f_2.json"`, `--filament-colour "#RRGGBB;#RRGGBB"` (Studio sizes the
+  purge from the colours) and `--load-custom-gcodes c.json` holding
+  `{"mode":"MultiAsSingle","gcodes":[{"type":"ToolChange","print_z":<first layer top above Z>,"extruder":2,"color":"#RRGGBB","extra":""}]}`,
+  the change the GUI's layer slider stores. Studio drops a ToolChange silently when the mode doesn't fit, so `slice`
+  reads the `T<n>` changes back from the G-code and exits 11 (nothing in `<out>`) unless they match.
 - Parse `result.json` (`return_code`, `error_string`, `sliced_plates`) and capture untimestamped stderr lines as `details`.
 
 **Outputs:**
@@ -218,13 +236,14 @@ All recipes use `brim_type = no_brim`. **Brims are opt-in** (`--set brim_type=ou
 | sdcard | no SD card | |
 | file_integrity | plate gcode md5 ≠ embedded .md5 | |
 | sliced_for_printer | 3MF `printer_model` ≠ configured model | |
-| single_filament | > 1 filament used | |
+| single_filament | number of `--slot`s ≠ filaments in the plate | |
 | nozzle_diameter | ≠ printer | |
 | | | nozzle_type: material differs |
 | bed_type | 3MF plate ≠ configured plate | |
 | tray | slot empty, or type ≠ file type | filament_id differs (e.g. GFA01 vs GFA00) |
 | filament_amount | remain_g < used_g × 1.15 + 5 | remaining unknown |
 | nozzle_temp | outside filament range | |
+| | tray to nozzle_temp run once per filament against its own slot; rows carry `"filament": N` on multi-filament jobs | |
 | | | ai_protections: first_layer_inspector / spaghetti_detector / print_halt off |
 | ftps_login | login + NLST failed | |
 
@@ -250,7 +269,9 @@ internal/errfmt/             exit codes, typed errors with hints
 ## 12. Safety rules (non-negotiable)
 
 - `print send` requires `--confirm` and a PASS from preflight, re-run at send time. `--dry-run` never connects FTPS for writing and never publishes.
-- `print pause|resume|stop` require `--confirm`.
+- `print pause|resume|stop` and `filament load` require `--confirm`. `filament load` runs only while PAUSE or
+  IDLE/FINISH/FAILED. It refuses during a change, with a blocking HMS code, or on an empty slot. When paused, it also
+  refuses without an AMS tray in the toolhead, or with a different material than the job's.
 - No command changes printer settings.
 - The access code is never printed, never logged, and never written to config. `ffmpeg` errors are redacted.
 - `--no-input` or a non-TTY stdin never prompts.

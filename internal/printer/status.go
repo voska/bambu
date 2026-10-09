@@ -26,6 +26,7 @@ type Status struct {
 	Nozzle      Nozzle      `json:"nozzle"`
 	AMS         []Tray      `json:"ams"`
 	ActiveTray  string      `json:"active_tray,omitempty"`
+	AMSStatus   string      `json:"ams_status,omitempty"`     // "filament_change" while the AMS swaps filament
 	External    string      `json:"external_spool,omitempty"` // filament type on the external spool holder, if any
 	Protections Protections `json:"protections"`
 	DevMode     *bool       `json:"dev_mode"`
@@ -177,6 +178,9 @@ func Summarize(p map[string]any) Status {
 	}
 	ams := obj(p["ams"])
 	s.ActiveTray = str(ams["tray_now"])
+	if v, ok := p["ams_status"]; ok {
+		s.AMSStatus = AMSStatusName(num(v))
+	}
 	s.AMS = []Tray{}
 	for _, a := range list(ams["ams"]) {
 		am := obj(a)

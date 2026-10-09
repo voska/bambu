@@ -1,0 +1,46 @@
+{
+ "return_code": 0,
+ "error_string": "Success.",
+ "sliced_plates": [
+  {
+   "filaments": [
+    {
+     "filament_id": "GFL99",
+     "id": 1,
+     "main_used_g": 18.72865104675293,
+     "total_used_g": 18.72865104675293
+    }
+   ],
+   "feature_type_times": {
+    "Bottom surface": 159.02462768554688,
+    "Bridge": 271.5497131347656,
+    "Custom": 428.9681091308594,
+    "Flush": 29.0,
+    "Gap infill": 32.95169448852539,
+    "Inner wall": 98.78113555908203,
+    "Internal solid infill": 646.0354614257812,
+    "Outer wall": 152.99423217773438,
+    "Overhang wall": 0.3451322615146637,
+    "Sparse infill": 292.5027770996094,
+    "Top surface": 210.83197021484375,
+    "Travel": 168.2787322998047,
+    "Undefined": 152.80227661132812
+   },
+   "filament_change_times": 0,
+   "warning_message": "It seems object CadQuery Component has floating regions. Please re-orient the object or enable support generation.",
+   "objects": [
+    {
+     "name": "CadQuery Component",
+     "bbox": {
+      "depth": 98.40521240234375,
+      "height": 5.400000095367432,
+      "width": 98.40521240234375,
+      "x": 78.7973861694336,
+      "y": 78.79739379882812,
+      "z": 4.440892098500626e-16
+     }
+    }
+   ]
+  }
+ ]
+}

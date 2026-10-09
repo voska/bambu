@@ -28,6 +28,7 @@ type CLI struct {
 	Slice     SliceCmd     `cmd:"" help:"Slice a model headlessly with Bambu Studio and a recipe."`
 	Preflight PreflightCmd `cmd:"" help:"Run the safety gates for a sliced file (read-only)."`
 	Print     PrintCmd     `cmd:"" help:"Send and control print jobs."`
+	Filament  FilamentCmd  `cmd:"" help:"AMS filament in the toolhead (remote colour change at a pause)."`
 	Monitor   MonitorCmd   `cmd:"" help:"Follow the current job until it ends; exit code reflects the outcome."`
 	Camera    CameraCmd    `cmd:"" help:"Printer camera."`
 	Printers  PrinterCmd   `cmd:"" name:"printer" help:"Manage configured printers."`

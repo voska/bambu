@@ -10,7 +10,9 @@ September 2026).
 - **Status:** `{"pushing":{"sequence_id":"0","command":"pushall"}}` requests the full status. X1 printers also push
   about one partial `print.push_status` per second while printing; merge them. (verified)
 - **Developer Mode:** `print.fun` is a hex bitfield. Bit `0x20000000` means signed commands are required, i.e. Developer Mode is **off**. (verified: `…1A30…` off, `…1830…` on)
-- **Control:** `{"print":{"sequence_id":"<n>","command":"pause"|"resume"|"stop","param":""}}` at QoS 1. (not yet verified)
+- **Control:** `{"print":{"sequence_id":"<n>","command":"pause"|"resume"|"stop","param":""}}` at QoS 1. (`resume` verified: PAUSE → RUNNING within seconds; `pause`/`stop` not yet verified)
+- **AMS state:** `print.ams_status >> 8` is Bambu Studio's `AmsStatusMain`: `0x00` idle, `0x01` filament_change, `0x02` rfid_identifying, `0x03` assist (resting, filament loaded), `0x04` calibration, `0x07` cold_pull, `0x10` self_check, `0x20` debug. `ams.tray_now` is the tray in the toolhead (`255` none, `254` external spool). A G-code pause (`M400 U1`) reports `PAUSE` with `print_error` `0300_8013`. (verified)
+- **Filament load:** `{"print":{"sequence_id":"<n>","command":"ams_change_filament","ams_id":A,"slot_id":S,"target":A*4+S,"curr_temp":T1,"tar_temp":T2}}`, as Studio's `command_ams_change_filament` sends it. Each temperature is the middle of that tray's `nozzle_temp_min`/`max` (Studio's default is 210). The printer cuts and unloads, loads the target and purges: `ams_status` goes `filament_change`, then `tray_now` becomes the target and `ams_status` returns to `assist`. (verified on an X1 Carbon during a pause, 2026-10-08: A4 → A1, then `resume` → RUNNING, and the print finished cleanly.)
 
 ## Start a job: `print.project_file` (verified)
 
@@ -23,7 +25,7 @@ September 2026).
 ```
 
 - **Reply:** `{"print":{"command":"project_file","result":"SUCCESS",…}}`, and `gcode_state` goes PREPARE/RUNNING within seconds.
-- **`ams_mapping`:** Bambu Studio's "v0" format (`SelectMachine.cpp::get_ams_mapping_result`). One entry per project filament; the value is the global tray id (`ams_index*4 + slot`, 0-based); `-1` = unused. `[3]` = first AMS, slot 4 (verified).
+- **`ams_mapping`:** Bambu Studio's "v0" format (`SelectMachine.cpp::get_ams_mapping_result`). One entry per project filament; the value is the global tray id (`ams_index*4 + slot`, 0-based); `-1` = unused. `[3]` = first AMS, slot 4 (verified). A two-filament job sends `[3, 0]` for A4 then A1 (from Studio's source; not yet verified on a real print). Studio also sends `ams_mapping2` (`[{ams_id, slot_id}]`); the verified single-filament payload omits it.
 - **Without Developer Mode**, the reply is a failure mentioning verification and HMS `0500_0500_0001_0007`. `bambu` maps that to exit 6.
 
 ## FTPS (upload)
@@ -63,3 +65,5 @@ Bambu Studio binds UDP 2021 exclusively while it runs. Broadcasts don't cross VL
 - **Exit codes:** the shell sees `256 + return_code`. `result.json` holds `return_code`/`error_string`; untimestamped stderr lines hold the reason.
 - **100% sparse infill** only accepts patterns that are also valid top-surface patterns (e.g. `zig-zag`, `monotonic`, `concentric`). Otherwise it fails with `-18`.
 - **STEP input** fails with `-6`.
+- **Layer-height colour change:** `--load-custom-gcodes c.json` with `{"mode":"MultiAsSingle","gcodes":[{"type":"ToolChange","print_z":Z,"extruder":2,"color":"#RRGGBB","extra":""}]}` (`CustomGCode::Info::from_json`). `print_z` is the first layer printed with the new filament (`IMSlider::add_code_as_tick`). The G-code then carries `M620 S1A` / `T1` / `M621 S1A` at that layer, and the AMS swaps without a pause. Studio drops a ToolChange silently when the mode doesn't fit (`ToolOrdering.cpp`), so read the `T<n>` lines back. `--filament-colour "#A;#B"` sizes the purge between filaments. (verified: 27-layer part, a single `T1` at layer 21 / Z 4.2 for a change after Z 4.0)
+- **Per-filament settings:** temperatures that vary by nozzle variant hold one entry per (filament, variant) pair in `project_settings.config`. Look them up through `filament_self_index` and `filament_extruder_variant`; plain indexing reads the wrong filament in a two-filament project.

@@ -41,39 +41,51 @@ var KeySettings = []string{
 
 // Filament is one filament used by the plate.
 type Filament struct {
-	Index      int     `json:"index"` // 0-based project filament index
-	Type       string  `json:"type"`
-	FilamentID string  `json:"filament_id"`
-	Color      string  `json:"color"`
-	UsedG      float64 `json:"used_g"`
-	UsedM      float64 `json:"used_m"`
+	Index           int      `json:"index"` // 0-based project filament index
+	Type            string   `json:"type"`
+	FilamentID      string   `json:"filament_id"`
+	Color           string   `json:"color"`
+	UsedG           float64  `json:"used_g"` // includes its share of purge and prime tower
+	UsedM           float64  `json:"used_m"`
+	ModelG          *float64 `json:"model_g,omitempty"` // set by slice: model + support only
+	WasteG          *float64 `json:"waste_g,omitempty"` // set by slice: purge + prime tower
+	NozzleTemp      string   `json:"nozzle_temp,omitempty"`
+	NozzleTempRange []string `json:"nozzle_temp_range,omitempty"`
+}
+
+// FilamentChange is an AMS filament change inside the printed layers: Filament (1-based) starts on Layer, at Z.
+type FilamentChange struct {
+	Layer    int     `json:"layer"`
+	Z        float64 `json:"z"`
+	Filament int     `json:"filament"`
 }
 
 // Job is what bambu needs to know about a sliced plate.
 type Job struct {
-	File            string         `json:"file"`
-	Plate           int            `json:"plate"`
-	GcodeParam      string         `json:"gcode_param"`
-	GcodeMD5        string         `json:"gcode_md5"`
-	GcodeMD5OK      *bool          `json:"gcode_md5_ok"`
-	PrinterModel    string         `json:"printer_model"`
-	PrinterPreset   string         `json:"printer_preset"`
-	ProcessPreset   string         `json:"process_preset"`
-	FilamentPresets []string       `json:"filament_presets"`
-	NozzleDiameter  string         `json:"nozzle_diameter"`
-	NozzleType      string         `json:"nozzle_type"`
-	BedType         string         `json:"bed_type"`
-	BedTemp         string         `json:"bed_temp"`
-	NozzleTemp      string         `json:"nozzle_temp"`
-	NozzleTempFirst string         `json:"nozzle_temp_initial"`
-	NozzleTempRange [2]string      `json:"nozzle_temp_range"`
-	Filaments       []Filament     `json:"filaments"`
-	PredictionS     int            `json:"time_s"`
-	TotalTime       string         `json:"time"`
-	WeightG         float64        `json:"weight_g"`
-	Layers          int            `json:"layers"`
-	Settings        map[string]any `json:"settings"`
-	Objects         []string       `json:"objects"`
+	File            string           `json:"file"`
+	Plate           int              `json:"plate"`
+	GcodeParam      string           `json:"gcode_param"`
+	GcodeMD5        string           `json:"gcode_md5"`
+	GcodeMD5OK      *bool            `json:"gcode_md5_ok"`
+	PrinterModel    string           `json:"printer_model"`
+	PrinterPreset   string           `json:"printer_preset"`
+	ProcessPreset   string           `json:"process_preset"`
+	FilamentPresets []string         `json:"filament_presets"`
+	NozzleDiameter  string           `json:"nozzle_diameter"`
+	NozzleType      string           `json:"nozzle_type"`
+	BedType         string           `json:"bed_type"`
+	BedTemp         string           `json:"bed_temp"`
+	NozzleTemp      string           `json:"nozzle_temp"`
+	NozzleTempFirst string           `json:"nozzle_temp_initial"`
+	NozzleTempRange [2]string        `json:"nozzle_temp_range"`
+	Filaments       []Filament       `json:"filaments"`
+	FilamentChanges []FilamentChange `json:"filament_changes"`
+	PredictionS     int              `json:"time_s"`
+	TotalTime       string           `json:"time"`
+	WeightG         float64          `json:"weight_g"`
+	Layers          int              `json:"layers"`
+	Settings        map[string]any   `json:"settings"`
+	Objects         []string         `json:"objects"`
 }
 
 type sliceInfo struct {
@@ -99,6 +111,7 @@ type sliceInfo struct {
 var (
 	reLayers = regexp.MustCompile(`total layer number: (\d+)`)
 	reTime   = regexp.MustCompile(`total estimated time: ([^\n;]+)`)
+	reTool   = regexp.MustCompile(`^T(\d+)$`)
 )
 
 // Inspect reads a sliced .gcode.3mf.
@@ -148,6 +161,7 @@ func Inspect(path string, plate int) (*Job, error) {
 	if m := reTime.FindStringSubmatch(head); m != nil {
 		j.TotalTime = strings.TrimSpace(m[1])
 	}
+	j.FilamentChanges = FilamentChanges(gcode)
 
 	ps := map[string]any{}
 	if b, ok := read("Metadata/project_settings.config"); ok {
@@ -175,7 +189,14 @@ func Inspect(path string, plate int) (*Job, error) {
 			id, _ := strconv.Atoi(fl.ID)
 			g, _ := strconv.ParseFloat(fl.UsedG, 64)
 			m, _ := strconv.ParseFloat(fl.UsedM, 64)
-			j.Filaments = append(j.Filaments, Filament{Index: id - 1, Type: fl.Type, FilamentID: fl.TrayID, Color: fl.Color, UsedG: g, UsedM: m})
+			i := id - 1
+			j.Filaments = append(j.Filaments, Filament{
+				Index: i, Type: fl.Type, FilamentID: fl.TrayID, Color: fl.Color, UsedG: g, UsedM: m,
+				NozzleTemp: filamentSetting(ps, "nozzle_temperature", i),
+				NozzleTempRange: []string{
+					filamentSetting(ps, "nozzle_temperature_range_low", i), filamentSetting(ps, "nozzle_temperature_range_high", i),
+				},
+			})
 		}
 	}
 	idx := 0
@@ -198,10 +219,10 @@ func Inspect(path string, plate int) (*Job, error) {
 	if j.BedType == "" {
 		j.BedType = BedTypes[pick(ps, "curr_bed_type", 0)]
 	}
-	j.BedTemp = pick(ps, PlateTempKey[j.BedType], idx)
-	j.NozzleTemp = pick(ps, "nozzle_temperature", idx)
-	j.NozzleTempFirst = pick(ps, "nozzle_temperature_initial_layer", idx)
-	j.NozzleTempRange = [2]string{pick(ps, "nozzle_temperature_range_low", idx), pick(ps, "nozzle_temperature_range_high", idx)}
+	j.BedTemp = filamentSetting(ps, PlateTempKey[j.BedType], idx)
+	j.NozzleTemp = filamentSetting(ps, "nozzle_temperature", idx)
+	j.NozzleTempFirst = filamentSetting(ps, "nozzle_temperature_initial_layer", idx)
+	j.NozzleTempRange = [2]string{filamentSetting(ps, "nozzle_temperature_range_low", idx), filamentSetting(ps, "nozzle_temperature_range_high", idx)}
 	for _, k := range KeySettings {
 		if v, ok := ps[k]; ok {
 			j.Settings[k] = v
@@ -227,6 +248,60 @@ func pick(ps map[string]any, key string, i int) string {
 		}
 	}
 	return ""
+}
+
+// filamentSetting is filament i's (0-based) value of a project setting. Settings that vary by extruder variant hold one
+// entry per (filament, variant) pair, found through filament_self_index and filament_extruder_variant; the installed
+// nozzle's variant is "<extruder_type> <nozzle_volume_type>" (PrintConfig get_index_for_extruder). Plain indexing reads
+// the wrong row whenever an earlier filament has more than one variant (rows: f1 Standard, f1 High Flow, f2 Standard).
+func filamentSetting(ps map[string]any, key string, i int) string {
+	v, ok := ps[key].([]any)
+	self, variants := strs(ps["filament_self_index"]), strs(ps["filament_extruder_variant"])
+	if !ok || len(v) != len(self) || len(v) != len(variants) {
+		return pick(ps, key, i)
+	}
+	want := pick(ps, "extruder_type", 0) + " " + pick(ps, "nozzle_volume_type", 0)
+	row := -1
+	for k, f := range self {
+		if f != strconv.Itoa(i+1) {
+			continue
+		}
+		if row < 0 || variants[k] == want {
+			row = k
+		}
+		if variants[k] == want {
+			break
+		}
+	}
+	if row < 0 {
+		return ""
+	}
+	s, _ := v[row].(string)
+	return s
+}
+
+// FilamentChanges lists the AMS filament changes inside the printed layers. Before layer 1 the start G-code loads the
+// first filament (T0) and runs T1000/T1100 macros; T255 at the end unloads. Only T0..T254 after a layer marker count.
+func FilamentChanges(gcode []byte) []FilamentChange {
+	out := []FilamentChange{}
+	layer, z := 0, 0.0
+	for _, line := range strings.Split(string(gcode), "\n") {
+		switch {
+		case strings.HasPrefix(line, "; Z_HEIGHT:"):
+			z, _ = strconv.ParseFloat(strings.TrimSpace(strings.TrimPrefix(line, "; Z_HEIGHT:")), 64)
+		case strings.HasPrefix(line, "; layer num/total_layer_count:"):
+			n, _, _ := strings.Cut(strings.TrimSpace(strings.TrimPrefix(line, "; layer num/total_layer_count:")), "/")
+			layer, _ = strconv.Atoi(n)
+		case layer > 0:
+			code, _, _ := strings.Cut(line, ";")
+			if m := reTool.FindStringSubmatch(strings.TrimSpace(code)); m != nil {
+				if t, _ := strconv.Atoi(m[1]); t < 255 {
+					out = append(out, FilamentChange{Layer: layer, Z: z, Filament: t + 1})
+				}
+			}
+		}
+	}
+	return out
 }
 
 func strs(v any) []string {

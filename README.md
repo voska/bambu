@@ -95,6 +95,21 @@ bambu print send part-solid-pla.gcode.3mf --slot 4 --confirm
 bambu monitor --snapshot-at-layer 2 --exec 'notify-send "$BAMBU_EVENT $BAMBU_STATE"'
 ```
 
+### Two colours
+
+A two-filament job changes colour at a layer height, and the AMS swaps by itself: no pause, nobody at the printer.
+
+```bash
+bambu slice sign.3mf --recipe prototype-pla \
+  --filament "Generic PLA" --color FFFFFF --filament "Bambu PLA Matte" --color 000000 \
+  --filament-change-z 4.0                           # white through Z 4.0, black from the next layer up
+bambu print send sign-prototype-pla.gcode.3mf --slot A4 --slot A1 --dry-run   # one slot per filament, in order
+```
+
+- `--filament-change-z` must be a layer top. `slice` reads the change back from the G-code and fails (exit 11) if Bambu Studio didn't place it.
+- The summary has grams per filament, including purge and prime-tower waste, and `filament_changes`.
+- To change colour by hand at a pause (e.g. a spool that isn't in the job), `bambu filament load --slot A1 --confirm` swaps the toolhead to another AMS slot remotely, then `bambu print resume --confirm`.
+
 ### Recipes
 
 Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and `bambu` resolves the right system preset for your printer model and nozzle.
@@ -115,13 +130,16 @@ Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and
 1. **`preflight` checks before anything is sent:**
    - the printer is idle, with no blocking errors (informational HMS codes like "Inspecting first layer" are ignored)
    - Developer Mode is on and an SD card is present
-   - the 3MF is intact and sliced for this printer model, with a single filament
+   - the 3MF is intact and sliced for this printer model, with one `--slot` per filament
    - the nozzle diameter and plate match
-   - the slot is loaded with the same filament type (a different product of that type is a WARN)
-   - there's enough filament (unknown remaining is a WARN), and the temperatures are sane
+   - each slot is loaded with its filament's type (a different product of that type is a WARN)
+   - each slot has enough filament (unknown remaining is a WARN), and the temperatures are sane
    - the printer's AI protections are on (WARN only) and FTPS login works
 2. **`print send`** re-runs preflight and refuses on any FAIL. It requires `--confirm`, uploads over FTPS, reads the file back to verify its MD5, then starts the job with bed leveling, flow calibration, vibration compensation and first-layer inspection **on**.
-3. **`print pause|resume|stop`** require `--confirm`. `bambu` has no command that changes printer settings.
+3. **`print pause|resume|stop`** require `--confirm`. `resume` exits 0 only once the printer reports RUNNING. It refuses mid-filament-change, and with an empty toolhead on the X1 series.
+4. **`filament load`** requires `--confirm` and works only while paused or idle. When paused, the toolhead must hold an AMS filament and the slot must hold the same material. It exits 0 only once the printer reports that slot in the toolhead.
+
+`bambu` has no command that changes printer settings.
 
 ### Exit codes
 
