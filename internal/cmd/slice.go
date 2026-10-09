@@ -22,7 +22,7 @@ type SliceCmd struct {
 	Filament   []string  `short:"f" sep:"none" help:"Filament preset to use instead of the recipe's (e.g. \"Generic PLA\", \"Bambu PLA Matte\"). Repeat once per filament, in print order, for a multi-colour job."`
 	Color      []string  `name:"color" aliases:"colour" sep:"none" placeholder:"RRGGBB" help:"Spool colour per --filament, same order (e.g. FFFFFF). Required with two or more filaments: Bambu Studio sizes the purge between them from the colours."`
 	ChangeZ    []float64 `name:"filament-change-z" sep:"none" placeholder:"Z" help:"The next --filament starts on the first layer above Z mm (the top of the previous filament's last layer); the AMS swaps automatically. Once per filament after the first."`
-	Set        []string  `short:"s" help:"Override a Bambu Studio setting: key=value (repeatable)." placeholder:"KEY=VALUE"`
+	Set        []string  `short:"s" sep:"none" help:"Override a Bambu Studio setting: key=value (repeatable; comma-separated batches and JSON lists supported)." placeholder:"KEY=VALUE"`
 	Name       string    `short:"n" help:"Output base name (default <model>-<recipe>)."`
 	Out        string    `short:"o" help:"Output directory (default: config output_dir, else current dir)." type:"path"`
 	AutoOrient bool      `name:"auto-orient" help:"Let the slicer re-orient the model (default: keep the model's orientation)."`

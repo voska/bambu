@@ -26,6 +26,7 @@ JSON field names and exit codes are part of the public API.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed
+- `slice --set` now preserves JSON list values, including commas inside quoted entries; comma-separated batches and repeated overrides remain supported.
 - `print pause` and `print stop` now verify PAUSE or an idle state before exiting 0; `--wait` defaults to 30s and must be positive.
 - A failed retry cannot reuse a prior successful slice. Every slice verifies its requested filament changes, including an empty change list.
 - Continuous monitoring preserves FAILED/PAUSE outcome codes on timeout and reports final state on interruption. Footprints correspond to plate 1, matching the inspected job and preview.
