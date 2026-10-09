@@ -7,6 +7,8 @@
 
 # bambu
 
+Migrating the Python Print Operator? See the [command and configuration guide](docs/operator-migration.md).
+
 Slice, check, send and monitor **Bambu Lab** prints from the terminal over your LAN. It's built for humans and for AI agents.
 
 - **Headless slicing:** it drives the Bambu Studio CLI with the correct system presets for your printer and nozzle, plus recipes and `--set` overrides.

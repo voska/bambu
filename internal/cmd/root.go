@@ -31,6 +31,7 @@ type CLI struct {
 	Filament  FilamentCmd  `cmd:"" help:"AMS filament in the toolhead (remote colour change at a pause)."`
 	Monitor   MonitorCmd   `cmd:"" help:"Follow the current job until it ends; exit code reflects the outcome."`
 	Camera    CameraCmd    `cmd:"" help:"Printer camera."`
+	Light     LightCmd     `cmd:"" help:"Read or switch the chamber light (verified by read-back)."`
 	Printers  PrinterCmd   `cmd:"" name:"printer" help:"Manage configured printers."`
 	Auth      AuthCmd      `cmd:"" help:"Access codes (OS keychain)."`
 	Recipe    RecipeCmd    `cmd:"" help:"Slicing recipes."`

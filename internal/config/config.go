@@ -33,8 +33,15 @@ type Printer struct {
 
 // Slicer overrides slicer discovery.
 type Slicer struct {
-	Path      string `toml:"path,omitempty"`
-	Resources string `toml:"resources,omitempty"`
+	Path       string `toml:"path,omitempty"`
+	Resources  string `toml:"resources,omitempty"`
+	StepPython string `toml:"step_python,omitempty"`
+}
+
+// Ntfy configures optional monitor notifications. Tokens live in the keychain or environment.
+type Ntfy struct {
+	URL   string `toml:"url,omitempty"`
+	Topic string `toml:"topic,omitempty"`
 }
 
 // Config is the whole config file.
@@ -43,6 +50,7 @@ type Config struct {
 	OutputDir      string              `toml:"output_dir,omitempty"`
 	RecipesDir     string              `toml:"recipes_dir,omitempty"`
 	Slicer         Slicer              `toml:"slicer,omitempty"`
+	Ntfy           Ntfy                `toml:"ntfy,omitempty"`
 	Printers       map[string]*Printer `toml:"printers,omitempty"`
 
 	path string

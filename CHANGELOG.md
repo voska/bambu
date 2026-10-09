@@ -7,6 +7,11 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
+- Monitor `--notify` with optional `[ntfy]` configuration and keychain/stdin token storage (`auth set --ntfy`), `--watch` for continuous monitoring, configurable `--interval`/`--pushall-every`, and full final status/snapshot/exit-code data.
+- STEP/STP slicing through a CadQuery interpreter (`[slicer] step_python`), object footprints including brim, and `slice --slot` suggested-slot metadata.
+- Opt-in `--strict` preflight/send gates for exact filament material and valid known temperature bounds; `slice --strict` requires a preview. The JSON preflight result records which gate mode ran.
+
 - Two-filament jobs with an automatic AMS colour change at a layer height:
   - `slice --filament P1 --color C1 --filament P2 --color C2 --filament-change-z Z` (`--filament` and `--color` repeat once per filament; `--colour` is an alias). Filament 2 starts on the first layer above Z, which must be a layer top. `slice` reads the change back from the G-code and exits 11 without writing to the output dir if Bambu Studio didn't place it.
   - `preflight`/`print send` take one `--slot` per filament, in filament order. Each filament's type, profile, amount and temperature gates run against its own slot. `ams_mapping` maps each filament to its slot (e.g. `[3, 0]`). The same slot given twice exits 2.
@@ -21,6 +26,9 @@ JSON field names and exit codes are part of the public API.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed
+- `print pause` and `print stop` now verify PAUSE or an idle state before exiting 0; `--wait` defaults to 30s and must be positive.
+- A failed retry cannot reuse a prior successful slice. Every slice verifies its requested filament changes, including an empty change list.
+- Continuous monitoring preserves FAILED/PAUSE outcome codes on timeout and reports final state on interruption. Footprints correspond to plate 1, matching the inspected job and preview.
 - `print resume --confirm` exited 0 even when the printer was still paused 3 s later. It now exits 0 only once the printer reports RUNNING (`--wait`, default 30s, must be positive; otherwise exit 14). It also refuses (exit 9) during a filament change, and on X1-series printers when the AMS reports an empty toolhead.
 - Per-filament temperatures in multi-filament 3MFs are read through `filament_self_index`/`filament_extruder_variant` instead of plain indexing, which reads the wrong row whenever an earlier filament has more than one nozzle-variant row.
 

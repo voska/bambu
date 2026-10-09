@@ -23,12 +23,19 @@ type AuthCmd struct {
 
 // AuthSetCmd stores an access code.
 type AuthSetCmd struct {
-	Name    string `arg:"" help:"Printer name."`
+	Name    string `arg:"" optional:"" help:"Printer name (required unless --ntfy)."`
 	NoCheck bool   `name:"no-check" help:"Don't verify the code against the printer."`
+	Ntfy    bool   `help:"Store an ntfy token instead of a printer access code (no printer argument)."`
 }
 
 // Run executes the command.
 func (c *AuthSetCmd) Run(g *Globals) error {
+	if c.Ntfy {
+		return c.storeNtfy(g)
+	}
+	if c.Name == "" {
+		return errfmt.New(errfmt.ExitUsage, "auth set needs a printer name, or --ntfy")
+	}
 	cfg, err := g.ConfigFile()
 	if err != nil {
 		return err
@@ -86,6 +93,38 @@ func (c *AuthSetCmd) Run(g *Globals) error {
 		},
 		Plain: [][]string{{"printer", "stored"}, {p.Name, "true"}},
 		Quiet: "ok",
+	})
+}
+
+func (c *AuthSetCmd) storeNtfy(g *Globals) error {
+	if c.Name != "" || c.NoCheck {
+		return errfmt.New(errfmt.ExitUsage, "--ntfy cannot be combined with a printer name or --no-check")
+	}
+	var token string
+	if term.IsTerminal(int(os.Stdin.Fd())) { //nolint:gosec // fd fits in int
+		if g.CLI.NoInput {
+			return errfmt.New(errfmt.ExitUsage, "no ntfy token on stdin and --no-input set")
+		}
+		fmt.Fprint(os.Stderr, "ntfy token: ")
+		b, err := term.ReadPassword(int(os.Stdin.Fd())) //nolint:gosec // fd fits in int
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return errfmt.New(errfmt.ExitUsage, "read ntfy token failed")
+		}
+		token = string(b)
+	} else {
+		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+		if err != nil && line == "" {
+			return errfmt.New(errfmt.ExitUsage, "no ntfy token on stdin")
+		}
+		token = line
+	}
+	if err := auth.StoreNtfyToken(g.Keyring, strings.TrimSpace(token)); err != nil {
+		return err
+	}
+	return g.Out.Print(output.View{
+		Data:  map[string]any{"stored": true, "keychain_service": auth.NtfyService, "keychain_account": "token"},
+		Human: func(h *output.Human) { h.Line("stored ntfy token in the OS keychain") }, Plain: [][]string{{"stored"}, {"true"}}, Quiet: "ok",
 	})
 }
 

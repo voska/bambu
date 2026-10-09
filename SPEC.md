@@ -24,9 +24,8 @@ In v0.1:
 Out of scope for v0.1:
 - Cloud API and Bambu Connect.
 - Per-object or painted multi-colour slicing: `slice` makes multi-filament jobs only from layer-height changes.
-- STEP input (convert to STL/3MF first).
 - The P1/A1 camera, which uses the port-6000 JPEG protocol: a clear error for now.
-- Changing any printer setting. `bambu` never changes printer settings: no xcam/AI toggles, no lights, no temperatures.
+- Changing persistent printer settings: no xcam/AI toggles, network configuration, or temperature controls. The chamber light is an explicit, verified control.
 - OrcaSlicer (see §8).
 
 ## 2. Settled decisions
@@ -227,6 +226,12 @@ All recipes use `brim_type = no_brim`. **Brims are opt-in** (`--set brim_type=ou
 | functional-petg | 0.20mm Standard | Bambu PETG Basic | as functional-pla; nozzle 252 (both), textured-plate bed 70, fan max 30 (overhang fan left at preset 50) |
 
 ## 10. Preflight gates (FAIL blocks send; WARN informs)
+
+`preflight` and `print send` accept `--strict`, retaining the Python operator's gates while keeping the existing Go
+default: material variants must match exactly, temperature bounds must both be finite and valid, and unknown nozzle
+material produces a WARN rather than an assumed match. `preflight.strict` records the selected mode. `slice --strict`
+requires an extracted plate preview before publishing the new 3MF. All slices reject unexpected tool changes and stale
+output from a previous invocation.
 
 | gate | FAIL when | WARN when |
 |---|---|---|

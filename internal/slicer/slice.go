@@ -42,18 +42,21 @@ var CLIErrors = map[int]string{
 
 // Request is one slice job.
 type Request struct {
-	Model         string
-	Recipe        recipe.Recipe
-	MachinePreset string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
-	Plate         string    // installed plate id, e.g. "textured_plate"
-	Filaments     []string  // filament presets in print order (default: the recipe's)
-	Colors        []string  // spool colour per filament (RRGGBB); Studio sizes the purge between filaments from them
-	ChangeZs      []float64 // filament n+1 starts on the first layer above ChangeZs[n-1]
-	Sets          []string  // key=value overrides
-	Name          string    // output base name
-	OutDir        string    // where the .gcode.3mf/.png/.summary.json go
-	WorkDir       string    // scratch dir for configs and slicer output
-	AutoOrient    bool
+	Model          string
+	Recipe         recipe.Recipe
+	MachinePreset  string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
+	Plate          string    // installed plate id, e.g. "textured_plate"
+	Filaments      []string  // filament presets in print order (default: the recipe's)
+	Colors         []string  // spool colour per filament (RRGGBB); Studio sizes the purge between filaments from them
+	ChangeZs       []float64 // filament n+1 starts on the first layer above ChangeZs[n-1]
+	Sets           []string  // key=value overrides
+	Name           string    // output base name
+	OutDir         string    // where the .gcode.3mf/.png/.summary.json go
+	WorkDir        string    // scratch dir for configs and slicer output
+	AutoOrient     bool
+	StepPython     string // interpreter with CadQuery for STEP input (default python3)
+	SuggestedSlot  string
+	RequirePreview bool
 }
 
 // Summary is the slice result (the --json contract).
@@ -85,6 +88,14 @@ type Summary struct {
 	AutoOrient      bool                 `json:"auto_orient"`
 	SlicerLog       string               `json:"slicer_log"`
 	StudioVersion   string               `json:"studio_version,omitempty"`
+	SuggestedSlot   string               `json:"suggested_slot,omitempty"`
+	Objects         []Object             `json:"objects"`
+}
+
+// Object reports the slicer's dimensions, including brim, for one plate object.
+type Object struct {
+	Name      string     `json:"name"`
+	Footprint [3]float64 `json:"footprint_incl_brim_mm"`
 }
 
 // Configs are the flattened configs handed to the CLI.
@@ -327,6 +338,10 @@ type result struct {
 			TotalUsedG *float64 `json:"total_used_g"` // adds purge and prime tower
 		} `json:"filaments"`
 		FeatureTypeTimes map[string]float64 `json:"feature_type_times"`
+		Objects          []struct {
+			Name string                                  `json:"name"`
+			BBox *struct{ Width, Depth, Height float64 } `json:"bbox"`
+		} `json:"objects"`
 	} `json:"sliced_plates"`
 }
 
@@ -334,10 +349,7 @@ type result struct {
 func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, error) {
 	ext := strings.ToLower(filepath.Ext(req.Model))
 	switch ext {
-	case ".stl", ".3mf", ".obj", ".amf":
-	case ".step", ".stp":
-		return nil, errfmt.New(errfmt.ExitUsage, "STEP is not supported by the Bambu Studio CLI").
-			WithHint("export an STL or 3MF from your CAD tool and slice that")
+	case ".stl", ".3mf", ".obj", ".amf", ".step", ".stp":
 	default:
 		return nil, errfmt.New(errfmt.ExitUsage, "unsupported model type %q", ext).WithHint("use .stl, .3mf or .obj")
 	}
@@ -400,6 +412,18 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 	}
 	name := SafeName(req.Name)
 	threemf := name + ".gcode.3mf"
+	for _, stale := range []string{"result.json", "plate_1.gcode", threemf} {
+		if err := os.Remove(filepath.Join(work, stale)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, errfmt.Wrap(errfmt.ExitConfig, err, "remove stale slicer output %s", stale)
+		}
+	}
+	src := model
+	if ext == ".step" || ext == ".stp" {
+		src, err = prepareSTEP(ctx, req.StepPython, model, work)
+		if err != nil {
+			return nil, err
+		}
+	}
 	orient := "0"
 	if req.AutoOrient {
 		orient = "1"
@@ -434,7 +458,7 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 		}
 		args = append(args, "--load-custom-gcodes", paths["custom_gcode"])
 	}
-	args = append(args, "--outputdir", work, "--export-3mf", threemf, model)
+	args = append(args, "--outputdir", work, "--export-3mf", threemf, src)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, st.Binary, args...) //nolint:gosec // discovered slicer binary, validated args
@@ -455,7 +479,7 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 	if ctx.Err() != nil {
 		return nil, errfmt.New(errfmt.ExitSliceFailed, "slicer timed out after 15 minutes").WithHint("simplify the model")
 	}
-	if res.ReturnCode != 0 || !exists(filepath.Join(work, threemf)) {
+	if runErr != nil || res.ReturnCode != 0 || !exists(filepath.Join(work, threemf)) {
 		details := []string{}
 		for _, l := range strings.Split(stderr.String(), "\n") {
 			l = strings.TrimSpace(l)
@@ -474,18 +498,19 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 			WithHint("%s; fix the recipe/--set values; log: %s", or(CLIErrors[res.ReturnCode], "see log"), logPath).
 			WithData("return_code", res.ReturnCode).WithData("details", details).WithData("log", logPath)
 	}
-	if len(tops) > 0 {
-		if err := checkChanges(filepath.Join(work, threemf), tops, logPath); err != nil {
-			return nil, err
+	if err := checkChanges(filepath.Join(work, threemf), tops, logPath); err != nil {
+		return nil, err
+	}
+	png := filepath.Join(out, name+".png")
+	if err := extract(filepath.Join(work, threemf), "Metadata/plate_1.png", png); err != nil {
+		if req.RequirePreview {
+			return nil, errfmt.Wrap(errfmt.ExitSliceFailed, err, "slicer did not produce a plate preview")
 		}
+		png = ""
 	}
 	final := filepath.Join(out, threemf)
 	if err := move(filepath.Join(work, threemf), final); err != nil {
 		return nil, errfmt.Wrap(errfmt.ExitError, err, "move output")
-	}
-	png := filepath.Join(out, name+".png")
-	if err := extract(final, "Metadata/plate_1.png", png); err != nil {
-		png = ""
 	}
 	j, err := job.Inspect(final, 1)
 	if err != nil {
@@ -499,8 +524,20 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 		BedType: j.BedType, BedTemp: j.BedTemp, NozzleTemp: j.NozzleTemp, NozzleFirst: j.NozzleTempFirst,
 		Presets: cfgs.Presets, Overrides: cfgs.Applied, Notes: cfgs.Notes, Warnings: []string{}, Settings: j.Settings,
 		AutoOrient: req.AutoOrient, SlicerLog: logPath, StudioVersion: st.Version,
+		SuggestedSlot: req.SuggestedSlot, Objects: []Object{},
 	}
-	for _, p := range res.SlicedPlates {
+	for n, p := range res.SlicedPlates {
+		if n == 0 {
+			for _, o := range p.Objects {
+				if o.BBox != nil {
+					dims := [3]float64{o.BBox.Width, o.BBox.Depth, o.BBox.Height}
+					for i := range dims {
+						dims[i] = math.Round(dims[i]*100) / 100
+					}
+					sum.Objects = append(sum.Objects, Object{Name: o.Name, Footprint: dims})
+				}
+			}
+		}
 		if p.WarningMessage != "" {
 			sum.Warnings = append(sum.Warnings, p.WarningMessage)
 		}

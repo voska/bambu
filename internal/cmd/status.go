@@ -75,6 +75,9 @@ type Event struct {
 	Errors       *printer.Errors `json:"errors,omitempty"`
 	Snapshot     string          `json:"snapshot,omitempty"`
 	Message      string          `json:"message,omitempty"`
+	Status       *printer.Status `json:"final,omitempty"`
+	ExitCode     *int            `json:"exit_code,omitempty"`
+	Interrupted  bool            `json:"interrupted,omitempty"`
 }
 
 func newEvent(kind string, s printer.Status) Event {
@@ -153,6 +156,9 @@ func humanStatus(h *output.Human, p *config.Printer, s printer.Status) {
 	}
 	h.Line("  temps    nozzle %.0f/%.0f  bed %.0f/%.0f   nozzle %s mm %s", s.Temps.Nozzle, s.Temps.NozzleTarget, s.Temps.Bed, s.Temps.BedTarget,
 		s.Nozzle.Diameter, s.Nozzle.Material)
+	if mode := s.Lights[chamberLight]; mode != "" {
+		h.Line("  light    chamber_light=%s", mode)
+	}
 	if len(s.Errors.HMS) == 0 && s.Errors.PrintError == "" {
 		h.Line("  errors   %s", h.Good("none"))
 	} else {

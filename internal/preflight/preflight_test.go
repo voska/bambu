@@ -71,6 +71,20 @@ func TestGenericPLAInGFL99Slot(t *testing.T) {
 	}
 }
 
+func TestStrictTemperatureBounds(t *testing.T) {
+	for _, bounds := range [][]string{nil, {"bad", "240"}, {"190", ""}, {"NaN", "240"}, {"190", "+Inf"}, {"250", "190"}} {
+		j, err := job.Inspect(testutil.Write(t, t.TempDir(), "p", testutil.Opts{}), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		j.Filaments[0].NozzleTempRange = bounds
+		r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayIDs: []int{0}, Strict: true})
+		if status(r, "nozzle_temp") != Fail {
+			t.Fatalf("strict temp accepted %v: %+v", bounds, r)
+		}
+	}
+}
+
 func TestFailures(t *testing.T) {
 	cases := []struct {
 		name string

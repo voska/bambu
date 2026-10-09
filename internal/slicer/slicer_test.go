@@ -253,9 +253,10 @@ func TestRunWithFakeStudio(t *testing.T) {
 	}
 
 	rq.Model = filepath.Join(dir, "part.step")
+	rq.StepPython = filepath.Join(dir, "missing-python")
 	_ = os.WriteFile(rq.Model, []byte("ISO-10303-21;"), 0o600)
-	if _, err := Run(context.Background(), st, index(t), rq); errfmt.As(err).Code != errfmt.ExitUsage {
-		t.Fatalf("STEP must be rejected with usage: %v", err)
+	if _, err := Run(context.Background(), st, index(t), rq); errfmt.As(err).Code != errfmt.ExitConfig {
+		t.Fatalf("STEP needs a CadQuery interpreter: %v", err)
 	}
 }
 
