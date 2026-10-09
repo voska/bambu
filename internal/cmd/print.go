@@ -23,14 +23,15 @@ import (
 
 // PreflightCmd runs the safety gates.
 type PreflightCmd struct {
-	File  string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
-	Slot  []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
-	NoFTP bool     `name:"no-ftp" help:"Skip the FTPS login check."`
+	File   string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
+	Slot   []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
+	NoFTP  bool     `name:"no-ftp" help:"Skip the FTPS login check."`
+	Strict bool     `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
 }
 
 // Run executes the command.
 func (c *PreflightCmd) Run(g *Globals) error {
-	pc, err := runPreflight(g, c.File, c.Slot, !c.NoFTP)
+	pc, err := runPreflight(g, c.File, c.Slot, !c.NoFTP, c.Strict)
 	if err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ type preflightCtx struct {
 	code   string
 }
 
-func runPreflight(g *Globals, file string, slots []string, checkFTP bool) (*preflightCtx, error) {
+func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool) (*preflightCtx, error) {
 	p, err := g.Target()
 	if err != nil {
 		return nil, err
@@ -87,7 +88,7 @@ func runPreflight(g *Globals, file string, slots []string, checkFTP bool) (*pref
 		conn.Close()
 		return nil, err
 	}
-	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays}
+	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict}
 	if checkFTP {
 		in.FTPSCheck = func() error {
 			ctx, cancel := context.WithTimeout(g.Ctx, 30*time.Second)
@@ -153,6 +154,7 @@ type SendCmd struct {
 	DryRun    bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
 	Timelapse bool          `help:"Record a timelapse."`
 	Wait      time.Duration `default:"180s" help:"How long to wait for the job to start."`
+	Strict    bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
 }
 
 type sendPlan struct {
@@ -188,7 +190,7 @@ func (c *SendCmd) Run(g *Globals) error {
 		return errfmt.New(errfmt.ExitGate, "refusing to print without --confirm").
 			WithHint("preview with --dry-run; pass --confirm only after a human approved this file and confirmed the plate is clear")
 	}
-	pc, err := runPreflight(g, c.File, c.Slot, true)
+	pc, err := runPreflight(g, c.File, c.Slot, true, c.Strict)
 	if err != nil {
 		return err
 	}
@@ -335,11 +337,12 @@ func waitStarted(ctx context.Context, conn printer.Conn, wait time.Duration) (st
 
 // PauseCmd pauses the job.
 type PauseCmd struct {
-	Confirm bool `help:"Required: this acts on a real print."`
+	Confirm bool          `help:"Required: this acts on a real print."`
+	Wait    time.Duration `default:"30s" help:"How long to wait for PAUSE (exit 14 if unconfirmed)."`
 }
 
 // Run executes the command.
-func (c *PauseCmd) Run(g *Globals) error { return control(g, "pause", c.Confirm, 0) }
+func (c *PauseCmd) Run(g *Globals) error { return control(g, "pause", c.Confirm, c.Wait) }
 
 // ResumeCmd resumes a paused job.
 type ResumeCmd struct {
@@ -357,14 +360,18 @@ func (c *ResumeCmd) Run(g *Globals) error {
 
 // StopCmd aborts the job.
 type StopCmd struct {
-	Confirm bool `help:"Required: stopping is irreversible."`
+	Confirm bool          `help:"Required: stopping is irreversible."`
+	Wait    time.Duration `default:"30s" help:"How long to wait for an idle state (exit 14 if unconfirmed)."`
 }
 
 // Run executes the command.
-func (c *StopCmd) Run(g *Globals) error { return control(g, "stop", c.Confirm, 0) }
+func (c *StopCmd) Run(g *Globals) error { return control(g, "stop", c.Confirm, c.Wait) }
 
-// control sends pause/resume/stop. A non-zero wait means: succeed only once the printer reports RUNNING.
+// control sends pause/resume/stop and succeeds only after the requested state is reported.
 func control(g *Globals, verb string, confirm bool, wait time.Duration) error {
+	if wait <= 0 {
+		return errfmt.New(errfmt.ExitUsage, "--wait must be positive")
+	}
 	if !confirm {
 		return errfmt.New(errfmt.ExitGate, "print %s needs --confirm", verb).WithHint("this acts on a real print")
 	}
@@ -409,19 +416,19 @@ func control(g *Globals, verb string, confirm bool, wait time.Duration) error {
 	if err := printer.CheckAck(ack, verb); err != nil {
 		return err
 	}
-	var after printer.Status
-	if wait > 0 {
-		after, err = waitState(g.Ctx, conn, wait, func(s printer.Status) bool { return s.State == "RUNNING" })
-		if err != nil {
-			return errfmt.New(errfmt.ExitTimeout, "%s not confirmed: printer still %s %s after the command", verb, after.State, wait).
-				WithHint("check the camera / printer screen and `bambu status`").WithData("ack", ack).WithData("state", after.State)
+	after, err := waitState(g.Ctx, conn, wait, func(s printer.Status) bool {
+		switch verb {
+		case "pause":
+			return s.State == "PAUSE"
+		case "stop":
+			return printer.IdleStates[s.State]
+		default:
+			return s.State == "RUNNING"
 		}
-	} else {
-		select {
-		case <-time.After(3 * time.Second):
-		case <-g.Ctx.Done():
-		}
-		after = printer.Summarize(conn.State())
+	})
+	if err != nil {
+		return errfmt.New(errfmt.ExitTimeout, "%s not confirmed: printer still %s %s after the command", verb, after.State, wait).
+			WithHint("check the camera / printer screen and `bambu status`").WithData("ack", ack).WithData("state", after.State)
 	}
 	data := map[string]any{"printer": p.Name, "command": verb, "acked": ack != nil, "state_before": before.State, "state_after": after.State}
 	return g.Out.Print(output.View{

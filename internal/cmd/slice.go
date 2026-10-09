@@ -10,13 +10,14 @@ import (
 
 	"github.com/voska/bambu/internal/errfmt"
 	"github.com/voska/bambu/internal/output"
+	"github.com/voska/bambu/internal/printer"
 	"github.com/voska/bambu/internal/recipe"
 	"github.com/voska/bambu/internal/slicer"
 )
 
 // SliceCmd slices a model.
 type SliceCmd struct {
-	Model      string    `arg:"" help:"Model file (.stl, .3mf, .obj)." type:"path"`
+	Model      string    `arg:"" help:"Model file (.stl, .3mf, .obj, .amf, .step/.stp with CadQuery)." type:"path"`
 	Recipe     string    `short:"r" required:"" help:"Recipe name (see: bambu recipe list)."`
 	Filament   []string  `short:"f" sep:"none" help:"Filament preset to use instead of the recipe's (e.g. \"Generic PLA\", \"Bambu PLA Matte\"). Repeat once per filament, in print order, for a multi-colour job."`
 	Color      []string  `name:"color" aliases:"colour" sep:"none" placeholder:"RRGGBB" help:"Spool colour per --filament, same order (e.g. FFFFFF). Required with two or more filaments: Bambu Studio sizes the purge between them from the colours."`
@@ -25,10 +26,19 @@ type SliceCmd struct {
 	Name       string    `short:"n" help:"Output base name (default <model>-<recipe>)."`
 	Out        string    `short:"o" help:"Output directory (default: config output_dir, else current dir)." type:"path"`
 	AutoOrient bool      `name:"auto-orient" help:"Let the slicer re-orient the model (default: keep the model's orientation)."`
+	Slot       string    `help:"Record the intended AMS slot in the summary; send still requires --slot."`
+	Strict     bool      `help:"Require a plate preview as part of the slice evidence."`
 }
 
 // Run executes the command.
 func (c *SliceCmd) Run(g *Globals) error {
+	if c.Slot != "" {
+		tray, err := printer.ParseSlot(c.Slot)
+		if err != nil {
+			return errfmt.Wrap(errfmt.ExitUsage, err, "bad --slot")
+		}
+		c.Slot = printer.TrayLabel(tray)
+	}
 	p, err := g.Target()
 	if err != nil {
 		return err
@@ -72,6 +82,7 @@ func (c *SliceCmd) Run(g *Globals) error {
 		Model: c.Model, Recipe: r, MachinePreset: m.MachinePreset(p.NozzleString()), Plate: p.Plate,
 		Filaments: c.Filament, Colors: c.Color, ChangeZs: c.ChangeZ, Sets: c.Set, Name: name, OutDir: out,
 		WorkDir: filepath.Join(cache, "bambu", "slice", name), AutoOrient: c.AutoOrient,
+		StepPython: expand(cfg.Slicer.StepPython), SuggestedSlot: c.Slot, RequirePreview: c.Strict,
 	})
 	if err != nil {
 		return err
@@ -128,6 +139,9 @@ func humanSlice(h *output.Human, s *slicer.Summary) {
 		parts = append(parts, fmt.Sprintf("%s=%v", k, flat(s.Settings[k])))
 	}
 	h.Line("  settings  %s", strings.Join(parts, ", "))
+	for _, o := range s.Objects {
+		h.Line("  object    %s: footprint incl. brim %g x %g x %g mm", o.Name, o.Footprint[0], o.Footprint[1], o.Footprint[2])
+	}
 	for _, n := range s.Notes {
 		h.Line("  %s  %s", h.Warn("note"), n)
 	}

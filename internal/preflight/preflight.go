@@ -30,6 +30,7 @@ type Gate struct {
 
 // Result is the preflight outcome. Slot and TrayID are the first filament's.
 type Result struct {
+	Strict   bool     `json:"strict"`
 	Result   string   `json:"result"`
 	Failed   []string `json:"failed"`
 	Warnings []string `json:"warnings"`
@@ -46,6 +47,7 @@ type Input struct {
 	Job     *job.Job
 	Status  printer.Status
 	TrayIDs []int // the AMS tray feeding each job filament, in filament order
+	Strict  bool  // retain bambu-op's exact material and known temperature requirements
 	// FTPSCheck, if set, performs a read-only FTPS login + listing and returns its error.
 	FTPSCheck func() error
 }
@@ -102,7 +104,11 @@ func Run(in Input) Result {
 	jd, _ := strconv.ParseFloat(j.NozzleDiameter, 64)
 	g.add("nozzle_diameter", pd > 0 && math.Abs(pd-jd) < 1e-3, Fail, fmt.Sprintf("file=%s printer=%s", j.NozzleDiameter, s.Nozzle.Diameter),
 		"swap the nozzle or re-slice for the installed one")
-	g.add("nozzle_type", s.Nozzle.Material == "" || j.NozzleType == "" || s.Nozzle.Material == j.NozzleType, Warn,
+	nozzleMatch := s.Nozzle.Material == j.NozzleType
+	if !in.Strict {
+		nozzleMatch = s.Nozzle.Material == "" || j.NozzleType == "" || nozzleMatch
+	}
+	g.add("nozzle_type", nozzleMatch, Warn,
 		fmt.Sprintf("file=%s printer=%s", orNone(j.NozzleType), orNone(s.Nozzle.Material)),
 		"fine for PLA/PETG; abrasive filaments need a hardened nozzle")
 	g.add("bed_type", j.BedType == p.Plate, Fail, fmt.Sprintf("file=%s installed=%s", j.BedType, p.Plate),
@@ -116,7 +122,7 @@ func Run(in Input) Result {
 		if n >= len(in.TrayIDs) {
 			break
 		}
-		fg := filamentGates(s, need, in.TrayIDs[n])
+		fg := filamentGates(s, need, in.TrayIDs[n], in.Strict)
 		if len(needs) > 1 {
 			for i := range fg {
 				fg[i].Filament = n + 1
@@ -138,7 +144,7 @@ func Run(in Input) Result {
 		g.add("ftps_login", err == nil, Fail, detail, "check the access code (bambu auth status --check) and Developer Mode")
 	}
 
-	r := Result{Result: Pass, Gates: g, Failed: []string{}, Warnings: []string{}, TrayIDs: in.TrayIDs, Slots: []string{}}
+	r := Result{Strict: in.Strict, Result: Pass, Gates: g, Failed: []string{}, Warnings: []string{}, TrayIDs: in.TrayIDs, Slots: []string{}}
 	for _, t := range in.TrayIDs {
 		r.Slots = append(r.Slots, printer.TrayLabel(t))
 	}
@@ -158,7 +164,7 @@ func Run(in Input) Result {
 }
 
 // filamentGates checks one job filament against the AMS tray mapped to it.
-func filamentGates(s printer.Status, need job.Filament, trayID int) gates {
+func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool) gates {
 	var g gates
 	label := printer.TrayLabel(trayID)
 	var tray *printer.Tray
@@ -179,7 +185,7 @@ func filamentGates(s printer.Status, need job.Filament, trayID int) gates {
 	sameFamily := family(tray.Type) == family(need.Type)
 	st := Pass
 	switch {
-	case !exact && sameFamily:
+	case !exact && sameFamily && !strict:
 		st = Warn
 	case !exact:
 		st = Fail
@@ -204,10 +210,14 @@ func filamentGates(s printer.Status, need job.Filament, trayID int) gates {
 	}
 	var rng [2]string
 	copy(rng[:], need.NozzleTempRange)
-	lo, _ := strconv.ParseFloat(rng[0], 64)
-	hi, _ := strconv.ParseFloat(rng[1], 64)
-	t, _ := strconv.ParseFloat(need.NozzleTemp, 64)
-	g.add("nozzle_temp", t > 0 && (lo == 0 || t >= lo) && (hi == 0 || t <= hi), Fail,
+	lo, loErr := strconv.ParseFloat(rng[0], 64)
+	hi, hiErr := strconv.ParseFloat(rng[1], 64)
+	t, tErr := strconv.ParseFloat(need.NozzleTemp, 64)
+	ok := t > 0 && (lo == 0 || t >= lo) && (hi == 0 || t <= hi)
+	if strict {
+		ok = loErr == nil && hiErr == nil && tErr == nil && lo > 0 && hi >= lo && t >= lo && t <= hi && !math.IsInf(t, 0) && !math.IsInf(lo, 0) && !math.IsInf(hi, 0)
+	}
+	g.add("nozzle_temp", ok, Fail,
 		fmt.Sprintf("nozzle=%s range=%s-%s", need.NozzleTemp, rng[0], rng[1]), "fix the recipe temperatures")
 	return g
 }

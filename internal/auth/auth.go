@@ -18,6 +18,36 @@ import (
 // Service is the keychain service name; the account is the printer serial.
 const Service = "bambu"
 
+// NtfyService stores the optional notification token (account "token").
+const NtfyService = "bambu-ntfy"
+
+// NtfyToken resolves the optional token without exposing its value.
+func NtfyToken(kr Keyring) string {
+	if token := strings.TrimSpace(os.Getenv("BAMBU_NTFY_TOKEN")); token != "" {
+		return token
+	}
+	if kr != nil {
+		token, _ := kr.Get(NtfyService, "token")
+		return token
+	}
+	return ""
+}
+
+// StoreNtfyToken stores a token; it never enters config, output or argv.
+func StoreNtfyToken(kr Keyring, token string) error {
+	if token == "" || strings.ContainsAny(token, "\r\n\x00") {
+		return errfmt.New(errfmt.ExitUsage, "invalid ntfy token")
+	}
+	if err := kr.Set(NtfyService, "token", token); err != nil {
+		return errfmt.Wrap(errfmt.ExitConfig, err, "store ntfy token in OS keychain")
+	}
+	stored, err := kr.Get(NtfyService, "token")
+	if err != nil || stored != token {
+		return errfmt.New(errfmt.ExitConfig, "ntfy token storage could not be verified")
+	}
+	return nil
+}
+
 // Sources of an access code, in resolution order.
 const (
 	SourceKeychain    = "keychain"

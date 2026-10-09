@@ -18,21 +18,22 @@ var ActiveStates = map[string]bool{"PREPARE": true, "RUNNING": true, "PAUSE": tr
 
 // Status is the stable, redacted summary of a printer report (the --json contract).
 type Status struct {
-	State       string      `json:"state"`
-	Stage       string      `json:"stage"`
-	Job         Job         `json:"job"`
-	Errors      Errors      `json:"errors"`
-	Temps       Temps       `json:"temps"`
-	Nozzle      Nozzle      `json:"nozzle"`
-	AMS         []Tray      `json:"ams"`
-	ActiveTray  string      `json:"active_tray,omitempty"`
-	AMSStatus   string      `json:"ams_status,omitempty"`     // "filament_change" while the AMS swaps filament
-	External    string      `json:"external_spool,omitempty"` // filament type on the external spool holder, if any
-	Protections Protections `json:"protections"`
-	DevMode     *bool       `json:"dev_mode"`
-	SDCard      bool        `json:"sdcard"`
-	Liveview    *bool       `json:"camera_lan_liveview"` // nil when no nonempty string was reported
-	WifiSignal  string      `json:"wifi_signal,omitempty"`
+	State       string            `json:"state"`
+	Stage       string            `json:"stage"`
+	Job         Job               `json:"job"`
+	Errors      Errors            `json:"errors"`
+	Temps       Temps             `json:"temps"`
+	Nozzle      Nozzle            `json:"nozzle"`
+	AMS         []Tray            `json:"ams"`
+	ActiveTray  string            `json:"active_tray,omitempty"`
+	AMSStatus   string            `json:"ams_status,omitempty"`     // "filament_change" while the AMS swaps filament
+	External    string            `json:"external_spool,omitempty"` // filament type on the external spool holder, if any
+	Protections Protections       `json:"protections"`
+	DevMode     *bool             `json:"dev_mode"`
+	SDCard      bool              `json:"sdcard"`
+	Liveview    *bool             `json:"camera_lan_liveview"` // nil when no nonempty string was reported
+	WifiSignal  string            `json:"wifi_signal,omitempty"`
+	Lights      map[string]string `json:"lights"`
 }
 
 // Job describes the current or last job.
@@ -191,6 +192,14 @@ func Summarize(p map[string]any) Status {
 		}
 	}
 	s.External = str(obj(p["vt_tray"])["tray_type"])
+	s.Lights = map[string]string{}
+	for _, entry := range list(p["lights_report"]) {
+		light := obj(entry)
+		node, mode := str(light["node"]), str(light["mode"])
+		if node != "" && mode != "" {
+			s.Lights[node] = mode
+		}
+	}
 	x := obj(p["xcam"])
 	s.Protections = Protections{
 		FirstLayerInspector: boolp(x["first_layer_inspector"]), SpaghettiDetector: boolp(x["spaghetti_detector"]),
