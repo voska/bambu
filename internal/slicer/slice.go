@@ -157,7 +157,7 @@ func Build(ix *Index, req Request) (*Configs, error) {
 	}
 	apply([]map[string]any{process}, req.Recipe.ProcessOverrides)
 	apply(c.Filaments, req.Recipe.FilamentOverrides)
-	for _, s := range req.Sets {
+	for _, s := range splitSets(req.Sets) {
 		k, v, ok := strings.Cut(s, "=")
 		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
 		if !ok || k == "" {
