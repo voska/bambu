@@ -42,21 +42,21 @@ var CLIErrors = map[int]string{
 
 // Request is one slice job.
 type Request struct {
-	Model          string
-	Recipe         recipe.Recipe
-	MachinePreset  string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
-	Plate          string    // installed plate id, e.g. "textured_plate"
-	Filaments      []string  // filament presets in print order (default: the recipe's)
-	Colors         []string  // spool colour per filament (RRGGBB); Studio sizes the purge between filaments from them
-	ChangeZs       []float64 // filament n+1 starts on the first layer above ChangeZs[n-1]
-	Sets           []string  // key=value overrides
-	Name           string    // output base name
-	OutDir         string    // where the .gcode.3mf/.png/.summary.json go
-	WorkDir        string    // scratch dir for configs and slicer output
-	AutoOrient     bool
-	StepPython     string // interpreter with CadQuery for STEP input (default python3)
-	SuggestedSlot  string
-	RequirePreview bool
+	Model         string
+	Recipe        recipe.Recipe
+	MachinePreset string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
+	Plate         string    // installed plate id, e.g. "textured_plate"
+	Filaments     []string  // filament presets in print order (default: the recipe's)
+	Colors        []string  // spool colour per filament (RRGGBB); Studio sizes the purge between filaments from them
+	ChangeZs      []float64 // filament n+1 starts on the first layer above ChangeZs[n-1]
+	Sets          []string  // key=value overrides
+	Name          string    // output base name
+	OutDir        string    // where the .gcode.3mf/.png/.summary.json go
+	WorkDir       string    // scratch dir for configs and slicer output
+	AutoOrient    bool
+	StepPython    string // interpreter with CadQuery for STEP input (default python3)
+	SuggestedSlot string
+	Strict        bool // require a preview and reject slicer warnings before publishing outputs
 }
 
 // Summary is the slice result (the --json contract).
@@ -498,12 +498,23 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 			WithHint("%s; fix the recipe/--set values; log: %s", or(CLIErrors[res.ReturnCode], "see log"), logPath).
 			WithData("return_code", res.ReturnCode).WithData("details", details).WithData("log", logPath)
 	}
+	warnings := []string{}
+	for _, p := range res.SlicedPlates {
+		if p.WarningMessage != "" {
+			warnings = append(warnings, p.WarningMessage)
+		}
+	}
+	if req.Strict && len(warnings) > 0 {
+		return nil, errfmt.New(errfmt.ExitSliceFailed, "strict slice rejected slicer warnings: %s", strings.Join(warnings, "; ")).
+			WithHint("no new slice outputs were published; resolve the warnings and inspect the G-code before printing; log: %s", logPath).
+			WithData("warnings", warnings).WithData("log", logPath)
+	}
 	if err := checkChanges(filepath.Join(work, threemf), tops, logPath); err != nil {
 		return nil, err
 	}
 	png := filepath.Join(out, name+".png")
 	if err := extract(filepath.Join(work, threemf), "Metadata/plate_1.png", png); err != nil {
-		if req.RequirePreview {
+		if req.Strict {
 			return nil, errfmt.Wrap(errfmt.ExitSliceFailed, err, "slicer did not produce a plate preview")
 		}
 		png = ""
@@ -522,7 +533,7 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 		TimeS: j.PredictionS, Time: j.TotalTime, WeightG: j.WeightG, Layers: j.Layers, Filaments: j.Filaments,
 		FilamentChanges: j.FilamentChanges, FilamentPresets: cfgs.FilamentPresets,
 		BedType: j.BedType, BedTemp: j.BedTemp, NozzleTemp: j.NozzleTemp, NozzleFirst: j.NozzleTempFirst,
-		Presets: cfgs.Presets, Overrides: cfgs.Applied, Notes: cfgs.Notes, Warnings: []string{}, Settings: j.Settings,
+		Presets: cfgs.Presets, Overrides: cfgs.Applied, Notes: cfgs.Notes, Warnings: warnings, Settings: j.Settings,
 		AutoOrient: req.AutoOrient, SlicerLog: logPath, StudioVersion: st.Version,
 		SuggestedSlot: req.SuggestedSlot, Objects: []Object{},
 	}
@@ -537,9 +548,6 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 					sum.Objects = append(sum.Objects, Object{Name: o.Name, Footprint: dims})
 				}
 			}
-		}
-		if p.WarningMessage != "" {
-			sum.Warnings = append(sum.Warnings, p.WarningMessage)
 		}
 		sum.PrimeTower = sum.PrimeTower || p.FeatureTypeTimes["Prime tower"] > 0
 		for _, u := range p.Filaments {

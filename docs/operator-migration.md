@@ -31,7 +31,8 @@ remain in place. A multi-filament `slice --slot` records one suggested slot; act
 
 Use `--strict` for operator slice/preflight/send. Default Go gate behavior stays compatible, including same-family
 material warnings and omitted temperature bounds. Strict mode fails unequal material types and unknown or malformed
-temperature bounds. A different product/profile remains a WARN in both tools. The strict slice requires a preview.
+temperature bounds. A different product/profile remains a WARN in both tools. The strict slice requires a preview
+and rejects slicer warnings with exit 11 before publishing new outputs.
 
 Go's slice JSON is the summary directly, without Python's `slice` wrapper. It includes
 `objects[].footprint_incl_brim_mm`, the first plate's dimensions, and `suggested_slot`. `status` keeps a `status` wrapper

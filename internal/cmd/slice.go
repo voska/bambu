@@ -27,7 +27,7 @@ type SliceCmd struct {
 	Out        string    `short:"o" help:"Output directory (default: config output_dir, else current dir)." type:"path"`
 	AutoOrient bool      `name:"auto-orient" help:"Let the slicer re-orient the model (default: keep the model's orientation)."`
 	Slot       string    `help:"Record the intended AMS slot in the summary; send still requires --slot."`
-	Strict     bool      `help:"Require a plate preview as part of the slice evidence."`
+	Strict     bool      `help:"Require a plate preview and reject slicer warnings before publishing outputs."`
 }
 
 // Run executes the command.
@@ -82,7 +82,7 @@ func (c *SliceCmd) Run(g *Globals) error {
 		Model: c.Model, Recipe: r, MachinePreset: m.MachinePreset(p.NozzleString()), Plate: p.Plate,
 		Filaments: c.Filament, Colors: c.Color, ChangeZs: c.ChangeZ, Sets: c.Set, Name: name, OutDir: out,
 		WorkDir: filepath.Join(cache, "bambu", "slice", name), AutoOrient: c.AutoOrient,
-		StepPython: expand(cfg.Slicer.StepPython), SuggestedSlot: c.Slot, RequirePreview: c.Strict,
+		StepPython: expand(cfg.Slicer.StepPython), SuggestedSlot: c.Slot, Strict: c.Strict,
 	})
 	if err != nil {
 		return err

@@ -26,6 +26,7 @@ JSON field names and exit codes are part of the public API.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed
+- `slice --strict` rejects slicer warnings, including floating regions, with exit 11 before publishing new output files. JSON errors include the warnings and slicer log path; slicing without `--strict` still reports warnings in the summary.
 - `slice --set` now preserves JSON list values, including commas inside quoted entries; comma-separated batches and repeated overrides remain supported.
 - `print pause` and `print stop` now verify PAUSE or an idle state before exiting 0; `--wait` defaults to 30s and must be positive.
 - A failed retry cannot reuse a prior successful slice. Every slice verifies its requested filament changes, including an empty change list.

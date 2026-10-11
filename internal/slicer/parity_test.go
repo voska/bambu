@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/voska/bambu/internal/errfmt"
+	"github.com/voska/bambu/internal/testutil"
 )
 
 func TestRunDoesNotReuseStaleSlice(t *testing.T) {
@@ -84,7 +86,7 @@ func TestStrictSliceNeedsPreview(t *testing.T) {
 		t.Skip("shell fake")
 	}
 	_, rq, err := twoFilamentRun(t, func(r *Request) {
-		r.RequirePreview = true
+		r.Strict = true
 		zr, err := zip.OpenReader(os.Getenv("FAKE_3MF"))
 		if err != nil {
 			t.Fatal(err)
@@ -123,6 +125,77 @@ func TestStrictSliceNeedsPreview(t *testing.T) {
 	})
 	if err == nil || errfmt.As(err).Code != errfmt.ExitSliceFailed || exists(filepath.Join(rq.OutDir, "two.gcode.3mf")) {
 		t.Fatalf("missing preview must not publish strict slice: %v", err)
+	}
+}
+
+func TestStrictSliceWarnings(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fake")
+	}
+	const floating = "It seems object CadQuery Component has floating regions. Please re-orient the object or enable support generation."
+	for _, tc := range []struct {
+		name    string
+		strict  bool
+		warning string
+	}{
+		{"strict floating regions", true, floating},
+		{"strict other warning", true, "Unsupported regions detected."},
+		{"strict clean slice", true, ""},
+		{"default floating regions", false, floating},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sum, rq, err := twoFilamentRun(t, func(r *Request) {
+				r.Strict = tc.strict
+				r.Filaments, r.Colors, r.ChangeZs = nil, nil, nil
+				t.Setenv("FAKE_3MF", testutil.Write(t, t.TempDir(), "prepared", testutil.Opts{}))
+				b, err := os.ReadFile(os.Getenv("FAKE_RESULT"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var res map[string]any
+				if err := json.Unmarshal(b, &res); err != nil {
+					t.Fatal(err)
+				}
+				res["sliced_plates"].([]any)[0].(map[string]any)["warning_message"] = tc.warning
+				b, err = json.Marshal(res)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(t.TempDir(), "warning-result.json")
+				if err := os.WriteFile(path, b, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("FAKE_RESULT", path)
+			})
+			if tc.strict && tc.warning != "" {
+				if err == nil {
+					t.Fatal("strict slice accepted a slicer warning")
+				}
+				e := errfmt.As(err)
+				if e.Code != errfmt.ExitSliceFailed || !strings.Contains(e.Message, tc.warning) ||
+					!reflect.DeepEqual(e.Data["warnings"], []string{tc.warning}) || e.Data["log"] == "" {
+					t.Fatalf("warning must be reported as a structured slice failure: %+v", e)
+				}
+				if sum != nil {
+					t.Fatal("rejected slice returned a success summary")
+				}
+				entries, err := os.ReadDir(rq.OutDir)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("rejected slice must not publish any output: %v %v", entries, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{}
+			if tc.warning != "" {
+				want = append(want, tc.warning)
+			}
+			if !reflect.DeepEqual(sum.Warnings, want) || !exists(sum.Gcode3MF) || !exists(sum.SummaryJSON) {
+				t.Fatalf("successful slice must preserve warnings and publish outputs: %+v", sum)
+			}
+		})
 	}
 }
 
