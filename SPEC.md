@@ -230,7 +230,9 @@ All recipes use `brim_type = no_brim`. **Brims are opt-in** (`--set brim_type=ou
 `preflight` and `print send` accept `--strict`, retaining the Python operator's gates while keeping the existing Go
 default: material variants must match exactly, temperature bounds must both be finite and valid, and unknown nozzle
 material produces a WARN rather than an assumed match. `preflight.strict` records the selected mode. `slice --strict`
-requires an extracted plate preview before publishing the new 3MF. All slices reject unexpected tool changes and stale
+requires an extracted plate preview and rejects slicer warnings (including floating regions) with exit 11 before
+publishing any new slice outputs. The JSON error includes the warning text and slicer log path. Without `--strict`,
+warnings remain in the successful slice summary. All slices reject unexpected tool changes and stale
 output from a previous invocation.
 
 | gate | FAIL when | WARN when |
