@@ -15,7 +15,7 @@ Slice, check, send and monitor **Bambu Lab** prints from the terminal over your 
 - **Safety first:**
   - Preflight gates check that the printer is idle, the right filament is in the slot, the plate and nozzle match, Developer Mode is on, and there's enough filament.
   - `print send` refuses to run without `--confirm`.
-  - No command ever changes printer settings.
+  - AMS spool metadata edits require `--confirm` and verified read-back. AI protections and network settings stay read-only.
 - **LAN only:** MQTT and FTPS go directly to the printer. No cloud account, no Bambu Connect.
 - **Agent-friendly:** `--json` everywhere (NDJSON for streams), stable exit codes, `schema` introspection, and no prompts with `--no-input`.
 - **Single static binary** for macOS, Linux and Windows.
@@ -127,6 +127,35 @@ Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and
 - **Custom recipes:** drop JSON files in `~/.config/bambu/recipes/`. The same name overrides a built-in. See `bambu recipe show solid-pla`.
 - **`--set key=value`** takes any Bambu Studio setting key. Unknown keys are rejected before slicing. At 100% infill, patterns the slicer rejects (grid, gyroid, …) switch to zig-zag automatically.
 
+### Configure an AMS spool
+
+After loading a non-RFID spool, record what is physically in the slot:
+
+```bash
+bambu ams set --slot A1 --type PLA --filament-id GFL99 --color C8A26B \
+  --nozzle-temp-min 200 --nozzle-temp-max 230 --dry-run --json
+# Use --confirm instead of --dry-run to apply the same values.
+```
+
+`GFL99` is Generic PLA; PLA+ uses material type `PLA`. Supply the matching profile ID,
+preview color, and temperature range from the spool manufacturer. Common Generic
+profile IDs are type-checked; matching other IDs to the material is the caller's responsibility. A wood-colored PLA+
+spool uses a PLA profile; a wood-filled material needs its own suitable profile.
+
+All five material fields are required so a changed spool does not inherit old values.
+The printer must be idle, in Developer Mode, and detect filament in the slot. Paused
+jobs, busy AMS operations, empty or unknown slots, and RFID spools are refused.
+Dry-run runs the same gates and shows the protocol payload without changing anything.
+Exit 0 on a write means a fresh tray report matched every field, including color alpha;
+an acknowledgement alone is insufficient. Repeating the same values sends nothing.
+
+This records metadata without loading filament or heating the printer. Temperature
+bounds are used by later filament loads and preflight checks. Bed temperature, flow
+ratio, and volumetric speed belong to the slicing profile; this command also leaves
+the tray's flow calibration unchanged and reports any calibration telemetry before
+and after. Only use it after a human identifies the physical spool, never to bypass a
+preflight mismatch.
+
 ### Safety model
 
 1. **`preflight` checks before anything is sent:**
@@ -141,7 +170,10 @@ Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and
 3. **`print pause|resume|stop`** require `--confirm`. `resume` exits 0 only once the printer reports RUNNING. It refuses mid-filament-change, and with an empty toolhead on the X1 series.
 4. **`filament load`** requires `--confirm` and works only while paused or idle. When paused, the toolhead must hold an AMS filament and the slot must hold the same material. It exits 0 only once the printer reports that slot in the toolhead.
 
-`bambu` has no command that changes printer settings.
+5. **`ams set`** requires `--confirm` to record non-RFID spool metadata while idle,
+   with physical filament detection and verified read-back. `--dry-run` sends nothing.
+
+AI protections, network settings, and direct temperature controls remain read-only.
 
 ### Exit codes
 

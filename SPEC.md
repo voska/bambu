@@ -16,6 +16,7 @@ In v0.1:
 - Pause / resume / stop. `resume` succeeds only once the printer reports RUNNING.
 - Two-filament jobs: a layer-height colour change that the AMS performs from the G-code, one `--slot` per filament.
 - `filament load`: a remote AMS colour change while paused (the manual route when the second colour isn't in the job).
+- `ams set`: record a human-identified, non-RFID spool's metadata while idle, with verified read-back.
 - Status, and a streaming `status --watch`.
 - `monitor` with a layer-N snapshot and an exec hook.
 - Camera snapshot for RTSPS models (X1/X1E/H2/P2S/X2D) via ffmpeg.
@@ -25,7 +26,7 @@ Out of scope for v0.1:
 - Cloud API and Bambu Connect.
 - Per-object or painted multi-colour slicing: `slice` makes multi-filament jobs only from layer-height changes.
 - The P1/A1 camera, which uses the port-6000 JPEG protocol: a clear error for now.
-- Changing persistent printer settings: no xcam/AI toggles, network configuration, or temperature controls. The chamber light is an explicit, verified control.
+- Changing persistent printer settings other than AMS spool metadata: no xcam/AI toggles, network configuration, or direct temperature controls. The chamber light is an explicit, verified control.
 - OrcaSlicer (see §8).
 
 ## 2. Settled decisions
@@ -44,7 +45,7 @@ Out of scope for v0.1:
 
 ## 3. Command tree
 
-The tree is noun-verb where there is a real noun: `printer`, `auth`, `print`, `camera`, `recipe`, `slicer`.
+The tree is noun-verb where there is a real noun: `printer`, `auth`, `print`, `camera`, `recipe`, `slicer`, `ams`.
 Top-level verbs are kept for the high-frequency, single-purpose actions an operator types all the time: `status`, `slice`, `preflight`, `monitor`.
 
 ```
@@ -55,6 +56,7 @@ bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm
 bambu print pause|stop --confirm
 bambu print resume --confirm [--wait 30s]     # exit 0 only once the printer reports RUNNING
 bambu filament load --slot S --confirm [--timeout 5m]  # paused or idle; exit 0 only once S is in the toolhead
+bambu ams set --slot S --type PLA --filament-id GFL99 --color RRGGBB --nozzle-temp-min T --nozzle-temp-max T (--dry-run | --confirm) [--wait 10s]
 bambu monitor [--snapshot-at-layer N] [--snapshot-dir D] [--exec CMD] [--timeout 2h]
 bambu camera snapshot [-o file.jpg]
 bambu printer add <name> --host H --serial S [--model X1C] [--nozzle 0.4] [--plate textured_plate] [--default]
@@ -86,6 +88,7 @@ Slots: `1`–`4` (first AMS) or `A1`…`D4`, plus `ext` for the external spool (
   - status: state
   - slice: the path of the .gcode.3mf
   - snapshot: the path of the image
+  - ams set: the normalized slot label
   - send: state
   - preflight: PASS/FAIL
 - **Errors in `--json` mode** print `{"error":{"code":N,"name":"...","message":"...","hint":"..."}}` to stdout **and** a human line to stderr.
@@ -163,6 +166,27 @@ pause, A4 → A1): `{"print":{"sequence_id":"<n>","command":"ams_change_filament
 "curr_temp":<mid of loaded tray's range>,"tar_temp":<mid of target tray's range>}}` (210 when a tray has no range).
 Done when `ams.tray_now` is the target and `ams_status >> 8` is no longer `0x01` (filament_change) nor the stage a
 loading/unloading one.
+
+**AMS metadata:** Studio's `command_ams_filament_settings` sends
+`{"print":{"sequence_id":"<n>","command":"ams_filament_setting","ams_id":A,"slot_id":S,"tray_id":S,
+"tray_info_idx":"<filament ID>","setting_id":"","tray_type":"PLA","tray_color":"RRGGBBFF",
+"nozzle_temp_min":200,"nozzle_temp_max":230}}`. `tray_id` is local to the AMS (0–3).
+All metadata fields are required; colors accept an optional `#`, and temperatures
+must satisfy 150 ≤ min ≤ max ≤ 350 °C. Common Generic profile IDs (PLA, PETG, ABS,
+ASA, PA, PC, TPU) are checked against the material type. For other IDs, the caller
+must supply a matching pair; the CLI does not resolve slicer presets.
+`tray_exist_bits` is a hexadecimal physical detection mask, independent of configured
+`tray_type`. Refuse missing detection or an empty slot, RFID identity, active jobs
+(including PAUSE), busy AMS operations, blocking errors, and missing Developer Mode.
+After publishing, request fresh `pushall` reports and compare type, filament ID, full
+RGBA color, and both temperature bounds. Exit 14 means submitted, unverified, with
+before/after evidence in the error data. An identical initial report is a verified
+no-op. Dry-run performs the same gates and returns `dry_run:true, sent:false,
+verified:false` with the payload. Successful writes include `before`, `after`,
+`sent`, `verified`, `payload`, and optional `ack` and calibration telemetry.
+Plain columns: slot, type, filament_id, color, nozzle_temp_min, nozzle_temp_max,
+dry_run, sent, verified. Bed/flow/speed remain slicing settings; tray calibration
+is reported but never selected or changed by this command.
 
 **Two-filament `ams_mapping`:** one entry per project filament in filament order, e.g. `[3, 0]` for A4 then A1
 (Studio's "v0" format, `SelectMachine.cpp`). Not yet verified on a real print.
@@ -279,7 +303,10 @@ internal/errfmt/             exit codes, typed errors with hints
 - `print pause|resume|stop` and `filament load` require `--confirm`. `filament load` runs only while PAUSE or
   IDLE/FINISH/FAILED. It refuses during a change, with a blocking HMS code, or on an empty slot. When paused, it also
   refuses without an AMS tray in the toolhead, or with a different material than the job's.
-- No command changes printer settings.
+- `ams set` is the exception for human-identified, non-RFID spool metadata. It needs
+  `--confirm`, an idle printer, physical filament detection, and fresh read-back;
+  never use it to bypass a preflight mismatch. It does not load, heat, or select flow calibration.
+- AI protections, network settings, and direct temperature controls stay read-only.
 - The access code is never printed, never logged, and never written to config. `ffmpeg` errors are redacted.
 - `--no-input` or a non-TTY stdin never prompts.
 
