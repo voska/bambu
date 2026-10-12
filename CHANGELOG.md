@@ -7,6 +7,7 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- `ams set --slot S --type T --filament-id ID --color RRGGBB --nozzle-temp-min T --nozzle-temp-max T`: record a non-RFID spool's metadata with `--confirm`, or preview with `--dry-run`. Requires an idle printer, Developer Mode, and physical filament detection. Verifies every field from fresh tray reports; exits 14 when submitted but unverified. Repeating identical values sends nothing. Flow calibration is reported but unchanged.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
 - Monitor `--notify` with optional `[ntfy]` configuration and keychain/stdin token storage (`auth set --ntfy`), `--watch` for continuous monitoring, configurable `--interval`/`--pushall-every`, and full final status/snapshot/exit-code data.
 - STEP/STP slicing through a CadQuery interpreter (`[slicer] step_python`), object footprints including brim, and `slice --slot` suggested-slot metadata.
