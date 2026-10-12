@@ -23,15 +23,16 @@ import (
 
 // PreflightCmd runs the safety gates.
 type PreflightCmd struct {
-	File   string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
-	Slot   []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
-	NoFTP  bool     `name:"no-ftp" help:"Skip the FTPS login check."`
-	Strict bool     `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	File             string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
+	Slot             []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
+	NoFTP            bool     `name:"no-ftp" help:"Skip the FTPS login check."`
+	Strict           bool     `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	AllowLowFilament bool     `help:"Downgrade a filament_amount FAIL to WARN; the job may run out and pause for a spool swap. All other gates still apply."`
 }
 
 // Run executes the command.
 func (c *PreflightCmd) Run(g *Globals) error {
-	pc, err := runPreflight(g, c.File, c.Slot, !c.NoFTP, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, !c.NoFTP, c.Strict, c.AllowLowFilament)
 	if err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ type preflightCtx struct {
 	code   string
 }
 
-func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool) (*preflightCtx, error) {
+func runPreflight(g *Globals, file string, slots []string, checkFTP, strict, allowLowFilament bool) (*preflightCtx, error) {
 	p, err := g.Target()
 	if err != nil {
 		return nil, err
@@ -88,7 +89,7 @@ func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool
 		conn.Close()
 		return nil, err
 	}
-	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict}
+	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict, AllowLowFilament: allowLowFilament}
 	if checkFTP {
 		in.FTPSCheck = func() error {
 			ctx, cancel := context.WithTimeout(g.Ctx, 30*time.Second)
@@ -148,13 +149,14 @@ type PrintCmd struct {
 
 // SendCmd uploads and starts a job.
 type SendCmd struct {
-	File      string        `arg:"" help:"Sliced .gcode.3mf." type:"path"`
-	Slot      []string      `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
-	Confirm   bool          `help:"Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear."`
-	DryRun    bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
-	Timelapse bool          `help:"Record a timelapse."`
-	Wait      time.Duration `default:"180s" help:"How long to wait for the job to start."`
-	Strict    bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	File             string        `arg:"" help:"Sliced .gcode.3mf." type:"path"`
+	Slot             []string      `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
+	Confirm          bool          `help:"Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear."`
+	DryRun           bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
+	Timelapse        bool          `help:"Record a timelapse."`
+	Wait             time.Duration `default:"180s" help:"How long to wait for the job to start."`
+	Strict           bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	AllowLowFilament bool          `help:"Downgrade a filament_amount FAIL to WARN; the job may run out and pause for a spool swap. All other gates still apply."`
 }
 
 type sendPlan struct {
@@ -190,7 +192,7 @@ func (c *SendCmd) Run(g *Globals) error {
 		return errfmt.New(errfmt.ExitGate, "refusing to print without --confirm").
 			WithHint("preview with --dry-run; pass --confirm only after a human approved this file and confirmed the plate is clear")
 	}
-	pc, err := runPreflight(g, c.File, c.Slot, true, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, true, c.Strict, c.AllowLowFilament)
 	if err != nil {
 		return err
 	}
@@ -233,6 +235,13 @@ func (c *SendCmd) Run(g *Globals) error {
 		return errfmt.New(errfmt.ExitGate, "preflight failed: %v", pc.result.Failed).WithHint("fix the failed gates (bambu preflight) and retry")
 	}
 
+	if c.AllowLowFilament {
+		for _, gate := range pc.result.Gates {
+			if gate.Gate == "filament_amount" && gate.Status == preflight.Warn {
+				g.Out.Warn("%s: %s; %s", gate.Gate, gate.Detail, gate.Fix)
+			}
+		}
+	}
 	g.Out.Hint("uploading %s to %s…", remote, pc.p.Name)
 	if err := upload(g.Ctx, pc, plan, g.FTPSPort); err != nil {
 		return err

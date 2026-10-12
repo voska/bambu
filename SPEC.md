@@ -50,8 +50,8 @@ Top-level verbs are kept for the high-frequency, single-purpose actions an opera
 ```
 bambu status [--watch]                       # read-only; --watch streams NDJSON until Ctrl-C
 bambu slice <model> --recipe R [--filament PRESET] [--set k=v]... [--name N] [--out DIR] [--auto-orient]
-bambu preflight <file.gcode.3mf> --slot S [--slot S2]... [--no-ftp]
-bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm) [--timelapse] [--wait 180s]
+bambu preflight <file.gcode.3mf> --slot S [--slot S2]... [--no-ftp] [--strict] [--allow-low-filament]
+bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm) [--timelapse] [--wait 180s] [--strict] [--allow-low-filament]
 bambu print pause|stop --confirm
 bambu print resume --confirm [--wait 30s]     # exit 0 only once the printer reports RUNNING
 bambu filament load --slot S --confirm [--timeout 5m]  # paused or idle; exit 0 only once S is in the toolhead
@@ -235,6 +235,13 @@ publishing any new slice outputs. The JSON error includes the warning text and s
 warnings remain in the successful slice summary. All slices reject unexpected tool changes and stale
 output from a previous invocation.
 
+`preflight` and `print send` accept `--allow-low-filament` (default false) when the operator accepts a runout and
+spool swap mid-print. Only an insufficient known `filament_amount` changes from FAIL to WARN, preserving its
+estimate and naming the override in its recovery text. It applies to every mapped filament independently of
+`--strict`; unknown remaining and all other gates retain their existing behavior. `preflight.allow_low_filament`
+records whether the flag was passed. A confirmed send emits the amount warning on stderr before uploading;
+`--dry-run` still sends nothing. No configuration enables the override implicitly.
+
 | gate | FAIL when | WARN when |
 |---|---|---|
 | printer_idle | gcode_state not IDLE/FINISH/FAILED | |
@@ -248,7 +255,7 @@ output from a previous invocation.
 | | | nozzle_type: material differs |
 | bed_type | 3MF plate ≠ configured plate | |
 | tray | slot empty, or type ≠ file type | filament_id differs (e.g. GFA01 vs GFA00) |
-| filament_amount | remain_g < used_g × 1.15 + 5 | remaining unknown |
+| filament_amount | remain_g < used_g × 1.15 + 5, unless `--allow-low-filament` | remaining unknown, or insufficient with `--allow-low-filament` |
 | nozzle_temp | outside filament range | |
 | | tray to nozzle_temp run once per filament against its own slot; rows carry `"filament": N` on multi-filament jobs | |
 | | | ai_protections: first_layer_inspector / spaghetti_detector / print_halt off |
