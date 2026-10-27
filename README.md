@@ -138,6 +138,7 @@ Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and
    - each slot has enough filament (unknown remaining is a WARN), and the temperatures are sane
    - the printer's AI protections are on (WARN only) and FTPS login works
 2. **`print send`** re-runs preflight and refuses on any FAIL. It requires `--confirm`, uploads over FTPS, reads the file back to verify its MD5, then starts the job with bed leveling, flow calibration, vibration compensation and first-layer inspection **on**.
+   Pass `--allow-low-filament` to `preflight` or `print send` only when you accept a runout and spool swap mid-print. It turns an insufficient estimated amount into an explicit `filament_amount` WARN, including with `--strict`. Empty slots and every other gate keep their existing behavior. The override applies to all mapped slots; unknown remaining stays a WARN. JSON records `preflight.allow_low_filament`.
 3. **`print pause|resume|stop`** require `--confirm`. `resume` exits 0 only once the printer reports RUNNING. It refuses mid-filament-change, and with an empty toolhead on the X1 series.
 4. **`filament load`** requires `--confirm` and works only while paused or idle. When paused, the toolhead must hold an AMS filament and the slot must hold the same material. It exits 0 only once the printer reports that slot in the toolhead.
 

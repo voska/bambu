@@ -30,24 +30,26 @@ type Gate struct {
 
 // Result is the preflight outcome. Slot and TrayID are the first filament's.
 type Result struct {
-	Strict   bool     `json:"strict"`
-	Result   string   `json:"result"`
-	Failed   []string `json:"failed"`
-	Warnings []string `json:"warnings"`
-	Slot     string   `json:"slot"`
-	TrayID   int      `json:"tray_id"`
-	Slots    []string `json:"slots"`
-	TrayIDs  []int    `json:"tray_ids"`
-	Gates    []Gate   `json:"gates"`
+	Strict           bool     `json:"strict"`
+	AllowLowFilament bool     `json:"allow_low_filament"`
+	Result           string   `json:"result"`
+	Failed           []string `json:"failed"`
+	Warnings         []string `json:"warnings"`
+	Slot             string   `json:"slot"`
+	TrayID           int      `json:"tray_id"`
+	Slots            []string `json:"slots"`
+	TrayIDs          []int    `json:"tray_ids"`
+	Gates            []Gate   `json:"gates"`
 }
 
 // Input bundles everything the gates look at.
 type Input struct {
-	Printer *config.Printer
-	Job     *job.Job
-	Status  printer.Status
-	TrayIDs []int // the AMS tray feeding each job filament, in filament order
-	Strict  bool  // retain bambu-op's exact material and known temperature requirements
+	Printer          *config.Printer
+	Job              *job.Job
+	Status           printer.Status
+	TrayIDs          []int // the AMS tray feeding each job filament, in filament order
+	Strict           bool  // retain bambu-op's exact material and known temperature requirements
+	AllowLowFilament bool  // accept a runout and spool swap when estimated remaining is insufficient
 	// FTPSCheck, if set, performs a read-only FTPS login + listing and returns its error.
 	FTPSCheck func() error
 }
@@ -122,7 +124,7 @@ func Run(in Input) Result {
 		if n >= len(in.TrayIDs) {
 			break
 		}
-		fg := filamentGates(s, need, in.TrayIDs[n], in.Strict)
+		fg := filamentGates(s, need, in.TrayIDs[n], in.Strict, in.AllowLowFilament)
 		if len(needs) > 1 {
 			for i := range fg {
 				fg[i].Filament = n + 1
@@ -144,7 +146,7 @@ func Run(in Input) Result {
 		g.add("ftps_login", err == nil, Fail, detail, "check the access code (bambu auth status --check) and Developer Mode")
 	}
 
-	r := Result{Strict: in.Strict, Result: Pass, Gates: g, Failed: []string{}, Warnings: []string{}, TrayIDs: in.TrayIDs, Slots: []string{}}
+	r := Result{Strict: in.Strict, AllowLowFilament: in.AllowLowFilament, Result: Pass, Gates: g, Failed: []string{}, Warnings: []string{}, TrayIDs: in.TrayIDs, Slots: []string{}}
 	for _, t := range in.TrayIDs {
 		r.Slots = append(r.Slots, printer.TrayLabel(t))
 	}
@@ -164,7 +166,7 @@ func Run(in Input) Result {
 }
 
 // filamentGates checks one job filament against the AMS tray mapped to it.
-func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool) gates {
+func filamentGates(s printer.Status, need job.Filament, trayID int, strict, allowLowFilament bool) gates {
 	var g gates
 	label := printer.TrayLabel(trayID)
 	var tray *printer.Tray
@@ -205,8 +207,12 @@ func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool)
 			"confirm there is enough filament on the spool")
 	} else {
 		ok := float64(*tray.RemainG) >= need.UsedG*1.15+5
-		g.add("filament_amount", ok, Fail, fmt.Sprintf("slot %s ~%d g (%d%%); job needs %.1f g (+15%%, +5 g)", label, *tray.RemainG, *tray.RemainPct, need.UsedG),
-			"load a fuller spool into slot "+label)
+		amountStatus, fix := Fail, "load a fuller spool into slot "+label
+		if !ok && allowLowFilament {
+			amountStatus = Warn
+			fix = "allowed by --allow-low-filament: the job may run out and pause; be ready to swap the spool in slot " + label
+		}
+		g.add("filament_amount", ok, amountStatus, fmt.Sprintf("slot %s ~%d g (%d%%); job needs %.1f g (+15%%, +5 g)", label, *tray.RemainG, *tray.RemainPct, need.UsedG), fix)
 	}
 	var rng [2]string
 	copy(rng[:], need.NozzleTempRange)

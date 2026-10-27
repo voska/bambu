@@ -7,6 +7,7 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- `preflight` and `print send` accept `--allow-low-filament` to turn an insufficient estimated amount into an explicit WARN when a mid-print runout and spool swap are acceptable. Works with `--strict`; all other gates and `--confirm` still apply. JSON records `preflight.allow_low_filament`.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
 - Monitor `--notify` with optional `[ntfy]` configuration and keychain/stdin token storage (`auth set --ntfy`), `--watch` for continuous monitoring, configurable `--interval`/`--pushall-every`, and full final status/snapshot/exit-code data.
 - STEP/STP slicing through a CadQuery interpreter (`[slicer] step_python`), object footprints including brim, and `slice --slot` suggested-slot metadata.
