@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -50,5 +51,21 @@ func TestRemainingEstimateGates(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRemainingEstimateCannotBypassInvalidJobUsage(t *testing.T) {
+	j, err := job.Inspect(testutil.Write(t, t.TempDir(), "part", testutil.Opts{Filaments: []string{"PLA:GFA01:NaN"}}), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !math.IsNaN(j.Filaments[0].UsedG) {
+		t.Fatal("fixture must reproduce nonfinite job usage")
+	}
+	for _, remaining := range []map[int]float64{nil, {0: 50}} {
+		r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayIDs: []int{0}, Remaining: remaining})
+		if status(r, "filament_amount") != Fail {
+			t.Fatalf("invalid job usage must still FAIL with a checked estimate: %+v", r)
+		}
 	}
 }

@@ -218,7 +218,8 @@ func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool,
 	if estimate != nil {
 		st := Warn
 		fix := "operator estimate; confirm the spool has this amount before starting"
-		if *estimate < required || math.IsNaN(*estimate) || math.IsInf(*estimate, 0) {
+		enough := *estimate >= required
+		if !enough || math.IsInf(*estimate, 0) {
 			st = Fail
 			fix = "load a fuller spool into slot " + label
 		}
