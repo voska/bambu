@@ -7,8 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,15 +26,16 @@ import (
 
 // PreflightCmd runs the safety gates.
 type PreflightCmd struct {
-	File   string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
-	Slot   []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
-	NoFTP  bool     `name:"no-ftp" help:"Skip the FTPS login check."`
-	Strict bool     `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	File              string   `arg:"" help:"Sliced .gcode.3mf." type:"path"`
+	Slot              []string `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
+	NoFTP             bool     `name:"no-ftp" help:"Skip the FTPS login check."`
+	Strict            bool     `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	FilamentRemaining []string `sep:"none" placeholder:"SLOT=Ng" help:"Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL."`
 }
 
 // Run executes the command.
 func (c *PreflightCmd) Run(g *Globals) error {
-	pc, err := runPreflight(g, c.File, c.Slot, !c.NoFTP, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, !c.NoFTP, c.Strict)
 	if err != nil {
 		return err
 	}
@@ -54,11 +58,7 @@ type preflightCtx struct {
 	code   string
 }
 
-func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool) (*preflightCtx, error) {
-	p, err := g.Target()
-	if err != nil {
-		return nil, err
-	}
+func runPreflight(g *Globals, file string, slots, estimates []string, checkFTP, strict bool) (*preflightCtx, error) {
 	trays := make([]int, 0, len(slots))
 	for _, slot := range slots {
 		tray, err := printer.ParseSlot(slot)
@@ -70,6 +70,14 @@ func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool
 				WithHint("each filament needs its own AMS slot: one --slot per filament, in filament order")
 		}
 		trays = append(trays, tray)
+	}
+	remaining, err := parseFilamentRemaining(estimates, trays)
+	if err != nil {
+		return nil, err
+	}
+	p, err := g.Target()
+	if err != nil {
+		return nil, err
 	}
 	j, err := job.Inspect(file, 1)
 	if err != nil {
@@ -88,7 +96,7 @@ func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool
 		conn.Close()
 		return nil, err
 	}
-	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict}
+	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict, Remaining: remaining}
 	if checkFTP {
 		in.FTPSCheck = func() error {
 			ctx, cancel := context.WithTimeout(g.Ctx, 30*time.Second)
@@ -103,6 +111,38 @@ func runPreflight(g *Globals, file string, slots []string, checkFTP, strict bool
 		}
 	}
 	return &preflightCtx{p: p, job: j, status: in.Status, result: preflight.Run(in), conn: conn, code: code}, nil
+}
+
+var gramsPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?g$`)
+
+func parseFilamentRemaining(values []string, trays []int) (map[int]float64, error) {
+	remaining := make(map[int]float64, len(values))
+	for _, value := range values {
+		slot, amount, ok := strings.Cut(value, "=")
+		if !ok || !gramsPattern.MatchString(amount) {
+			return nil, errfmt.New(errfmt.ExitUsage, "bad --filament-remaining %q", value).
+				WithHint("state nonnegative grams, e.g. --filament-remaining A2=50g")
+		}
+		tray, err := printer.ParseSlot(slot)
+		if err != nil {
+			return nil, errfmt.Wrap(errfmt.ExitUsage, err, "bad --filament-remaining slot")
+		}
+		if !slices.Contains(trays, tray) {
+			return nil, errfmt.New(errfmt.ExitUsage, "--filament-remaining slot %s is not mapped by --slot", printer.TrayLabel(tray)).
+				WithHint("add the matching --slot, or drop this estimate")
+		}
+		if _, exists := remaining[tray]; exists {
+			return nil, errfmt.New(errfmt.ExitUsage, "--filament-remaining slot %s given more than once", printer.TrayLabel(tray)).
+				WithHint("pass one --filament-remaining per slot")
+		}
+		grams, err := strconv.ParseFloat(strings.TrimSuffix(amount, "g"), 64)
+		if err != nil || math.IsInf(grams, 0) || math.IsNaN(grams) {
+			return nil, errfmt.New(errfmt.ExitUsage, "bad --filament-remaining amount %q", amount).
+				WithHint("state finite nonnegative grams, e.g. A2=50g")
+		}
+		remaining[tray] = grams
+	}
+	return remaining, nil
 }
 
 type gatesData struct {
@@ -148,13 +188,14 @@ type PrintCmd struct {
 
 // SendCmd uploads and starts a job.
 type SendCmd struct {
-	File      string        `arg:"" help:"Sliced .gcode.3mf." type:"path"`
-	Slot      []string      `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
-	Confirm   bool          `help:"Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear."`
-	DryRun    bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
-	Timelapse bool          `help:"Record a timelapse."`
-	Wait      time.Duration `default:"180s" help:"How long to wait for the job to start."`
-	Strict    bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	File              string        `arg:"" help:"Sliced .gcode.3mf." type:"path"`
+	Slot              []string      `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
+	Confirm           bool          `help:"Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear."`
+	DryRun            bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
+	Timelapse         bool          `help:"Record a timelapse."`
+	Wait              time.Duration `default:"180s" help:"How long to wait for the job to start."`
+	Strict            bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
+	FilamentRemaining []string      `sep:"none" placeholder:"SLOT=Ng" help:"Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL."`
 }
 
 type sendPlan struct {
@@ -190,7 +231,7 @@ func (c *SendCmd) Run(g *Globals) error {
 		return errfmt.New(errfmt.ExitGate, "refusing to print without --confirm").
 			WithHint("preview with --dry-run; pass --confirm only after a human approved this file and confirmed the plate is clear")
 	}
-	pc, err := runPreflight(g, c.File, c.Slot, true, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, true, c.Strict)
 	if err != nil {
 		return err
 	}
@@ -231,6 +272,11 @@ func (c *SendCmd) Run(g *Globals) error {
 	if pc.result.Result != preflight.Pass {
 		_ = g.Out.Print(gatesView(pc))
 		return errfmt.New(errfmt.ExitGate, "preflight failed: %v", pc.result.Failed).WithHint("fix the failed gates (bambu preflight) and retry")
+	}
+	for _, gt := range pc.result.Gates {
+		if gt.OperatorEstimate != nil {
+			g.Out.Hint("WARN filament_amount: %s", gt.Detail)
+		}
 	}
 
 	g.Out.Hint("uploading %s to %s…", remote, pc.p.Name)

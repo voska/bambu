@@ -143,6 +143,14 @@ Recipes name presets generically (`"0.20mm Standard"`, `"Bambu PLA Basic"`), and
 
 `bambu` has no command that changes printer settings.
 
+If the AMS remaining estimate is wrong, check the spool and pass
+`--filament-remaining A2=50g` to `preflight` or `print send`. Repeat the flag for
+each checked slot. The estimate applies only to that invocation and must cover the
+job's filament use plus 15% and 5 g. A sufficient estimate reports `filament_amount`
+as WARN with both the stated amount and AMS reading, including with `--strict`.
+An insufficient estimate stays FAIL. The slot must still be loaded with the right
+material, and all other gates and `--confirm` still apply.
+
 ### Exit codes
 
 `bambu exit-codes`

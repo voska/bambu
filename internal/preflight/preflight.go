@@ -21,11 +21,20 @@ const (
 
 // Gate is one check.
 type Gate struct {
-	Gate     string `json:"gate"`
-	Status   string `json:"status"`
-	Detail   string `json:"detail"`
-	Fix      string `json:"fix,omitempty"`
-	Filament int    `json:"filament,omitempty"` // 1-based job filament, on multi-filament jobs only
+	Gate             string        `json:"gate"`
+	Status           string        `json:"status"`
+	Detail           string        `json:"detail"`
+	Fix              string        `json:"fix,omitempty"`
+	Filament         int           `json:"filament,omitempty"` // 1-based job filament, on multi-filament jobs only
+	OperatorEstimate *StatedAmount `json:"operator_estimate,omitempty"`
+}
+
+// StatedAmount records the operator's estimate alongside the unmodified AMS telemetry.
+type StatedAmount struct {
+	StatedG      float64 `json:"stated_g"`
+	AMSRemainG   *int    `json:"ams_remain_g"`
+	AMSRemainPct *int    `json:"ams_remain_pct"`
+	RequiredG    float64 `json:"required_g"`
 }
 
 // Result is the preflight outcome. Slot and TrayID are the first filament's.
@@ -43,11 +52,12 @@ type Result struct {
 
 // Input bundles everything the gates look at.
 type Input struct {
-	Printer *config.Printer
-	Job     *job.Job
-	Status  printer.Status
-	TrayIDs []int // the AMS tray feeding each job filament, in filament order
-	Strict  bool  // retain bambu-op's exact material and known temperature requirements
+	Printer   *config.Printer
+	Job       *job.Job
+	Status    printer.Status
+	TrayIDs   []int           // the AMS tray feeding each job filament, in filament order
+	Strict    bool            // retain bambu-op's exact material and known temperature requirements
+	Remaining map[int]float64 // operator estimates in grams, keyed by AMS tray ID; this invocation only
 	// FTPSCheck, if set, performs a read-only FTPS login + listing and returns its error.
 	FTPSCheck func() error
 }
@@ -122,7 +132,11 @@ func Run(in Input) Result {
 		if n >= len(in.TrayIDs) {
 			break
 		}
-		fg := filamentGates(s, need, in.TrayIDs[n], in.Strict)
+		var estimate *float64
+		if grams, ok := in.Remaining[in.TrayIDs[n]]; ok {
+			estimate = &grams
+		}
+		fg := filamentGates(s, need, in.TrayIDs[n], in.Strict, estimate)
 		if len(needs) > 1 {
 			for i := range fg {
 				fg[i].Filament = n + 1
@@ -164,7 +178,7 @@ func Run(in Input) Result {
 }
 
 // filamentGates checks one job filament against the AMS tray mapped to it.
-func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool) gates {
+func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool, estimate *float64) gates {
 	var g gates
 	label := printer.TrayLabel(trayID)
 	var tray *printer.Tray
@@ -200,11 +214,32 @@ func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool)
 	g.add("filament_profile", tray.FilamentID == need.FilamentID, Warn,
 		fmt.Sprintf("slot %s filament_id=%s (%s) file=%s", label, orNone(tray.FilamentID), orNone(tray.Name), orNone(need.FilamentID)),
 		"a different product than sliced for; re-slice with --filament to match, or accept")
-	if tray.RemainG == nil {
+	required := need.UsedG*1.15 + 5
+	if estimate != nil {
+		st := Warn
+		fix := "operator estimate; confirm the spool has this amount before starting"
+		enough := *estimate >= required
+		if !enough || math.IsInf(*estimate, 0) {
+			st = Fail
+			fix = "load a fuller spool into slot " + label
+		}
+		ams := "unknown"
+		if tray.RemainG != nil && tray.RemainPct != nil {
+			ams = fmt.Sprintf("~%d g (%d%%)", *tray.RemainG, *tray.RemainPct)
+		} else if tray.RemainPct != nil {
+			ams = fmt.Sprintf("grams unknown (%d%%)", *tray.RemainPct)
+		}
+		g = append(g, Gate{
+			Gate: "filament_amount", Status: st,
+			Detail:           fmt.Sprintf("slot %s operator estimate %g g; AMS %s; job needs %.1f g (+15%%, +5 g) = %g g", label, *estimate, ams, need.UsedG, required),
+			Fix:              fix,
+			OperatorEstimate: &StatedAmount{StatedG: *estimate, AMSRemainG: tray.RemainG, AMSRemainPct: tray.RemainPct, RequiredG: required},
+		})
+	} else if tray.RemainG == nil {
 		g.add("filament_amount", false, Warn, fmt.Sprintf("slot %s remaining unknown; job needs %.1f g", label, need.UsedG),
 			"confirm there is enough filament on the spool")
 	} else {
-		ok := float64(*tray.RemainG) >= need.UsedG*1.15+5
+		ok := float64(*tray.RemainG) >= required
 		g.add("filament_amount", ok, Fail, fmt.Sprintf("slot %s ~%d g (%d%%); job needs %.1f g (+15%%, +5 g)", label, *tray.RemainG, *tray.RemainPct, need.UsedG),
 			"load a fuller spool into slot "+label)
 	}
