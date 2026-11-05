@@ -24,7 +24,6 @@ JSON field names and exit codes are part of the public API.
   - job: `filament_changes`
 
 ### Changed
-- Document checked spool amounts in the bundled agent skill and the `preflight` / `print send` flag reference.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed

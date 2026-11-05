@@ -81,7 +81,7 @@ Run the safety gates for a sliced file (read-only).
 | flag | type | default | help |
 |---|---|---|---|
 | `--slot, -s` | []string |  | AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1). (required) |
-| `--filament-remaining` | []string |  | Physically checked grams remaining, e.g. A2=50g; repeat per slot, this invocation only. Sufficient estimates WARN with original AMS telemetry, insufficient estimates FAIL. |
+| `--filament-remaining` | []string |  | Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL. |
 | `--no-ftp` | bool |  | Skip the FTPS login check. |
 
 ### `bambu print pause`
@@ -108,7 +108,7 @@ Upload a sliced file and start it (requires --confirm and a passing preflight).
 | flag | type | default | help |
 |---|---|---|---|
 | `--slot, -s` | []string |  | AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1). (required) |
-| `--filament-remaining` | []string |  | Physically checked grams remaining, e.g. A2=50g; repeat per slot, this invocation only. Sufficient estimates WARN with original AMS telemetry, insufficient estimates FAIL. |
+| `--filament-remaining` | []string |  | Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL. |
 | `--confirm` | bool |  | Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear. |
 | `--dry-run, -n` | bool |  | Run preflight and show the exact upload path and MQTT payload; send nothing. |
 | `--timelapse` | bool |  | Record a timelapse. |
