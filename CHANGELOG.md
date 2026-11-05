@@ -7,6 +7,7 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- Repeatable `--filament-remaining A2=50g` on `preflight` and `print send` for a checked spool when AMS remaining telemetry is wrong. Sufficient estimates WARN with the stated amount and original AMS reading; insufficient estimates still FAIL against the existing 15% + 5 g reserve, including with `--strict`. Estimates apply only to the current invocation. JSON amount gates include an optional `operator_estimate` with both sources and the required grams.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
 - Monitor `--notify` with optional `[ntfy]` configuration and keychain/stdin token storage (`auth set --ntfy`), `--watch` for continuous monitoring, configurable `--interval`/`--pushall-every`, and full final status/snapshot/exit-code data.
 - STEP/STP slicing through a CadQuery interpreter (`[slicer] step_python`), object footprints including brim, and `slice --slot` suggested-slot metadata.

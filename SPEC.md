@@ -235,6 +235,17 @@ publishing any new slice outputs. The JSON error includes the warning text and s
 warnings remain in the successful slice summary. All slices reject unexpected tool changes and stale
 output from a previous invocation.
 
+Both commands accept repeatable `--filament-remaining SLOT=AMOUNTg`, e.g. `A2=50g`,
+for a spool checked by the operator when AMS telemetry is inaccurate. Amounts must
+be finite nonnegative decimal grams with the `g` suffix, and slots must be mapped
+by `--slot`; duplicate slots (including aliases) are usage errors (exit 2), checked
+before connecting. The estimate applies only to the current invocation. It must
+cover `used_g * 1.15 + 5`; insufficient estimates FAIL, sufficient estimates WARN
+even with `--strict`. Other gates are unchanged. The amount gate's optional
+`operator_estimate` JSON object records `stated_g`, `ams_remain_g`,
+`ams_remain_pct`, and `required_g`; unknown AMS values remain null. Human detail
+shows both sources, and confirmed sends also warn on stderr before uploading.
+
 | gate | FAIL when | WARN when |
 |---|---|---|
 | printer_idle | gcode_state not IDLE/FINISH/FAILED | |

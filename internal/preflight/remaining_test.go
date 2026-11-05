@@ -1,0 +1,49 @@
+package preflight
+
+import (
+	"testing"
+
+	"github.com/voska/bambu/internal/job"
+	"github.com/voska/bambu/internal/testutil"
+)
+
+func TestRemainingEstimateGates(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		grams          float64
+		unknown, empty bool
+		want, gate     string
+	}{
+		{"sufficient", 50, false, false, Warn, "filament_amount"},
+		{"insufficient", 19, false, false, Fail, "filament_amount"},
+		{"at reserve", 12.3*1.15 + 5, false, false, Warn, "filament_amount"},
+		{"below reserve", 12.3*1.15 + 5 - 0.001, false, false, Fail, "filament_amount"},
+		{"unknown sufficient", 50, true, false, Warn, "filament_amount"},
+		{"unknown insufficient", 0, true, false, Fail, "filament_amount"},
+		{"empty tray", 50, false, true, Fail, "tray"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			j, err := job.Inspect(testutil.Write(t, t.TempDir(), "part", testutil.Opts{Filaments: []string{"PLA:GFA01:12.3"}}), 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := idleStatus(t)
+			if tc.unknown {
+				s.AMS[0].RemainG, s.AMS[0].RemainPct = nil, nil
+			}
+			s.AMS[0].Loaded = !tc.empty
+			for _, strict := range []bool{false, true} {
+				r := Run(Input{Printer: shop, Job: j, Status: s, TrayIDs: []int{0}, Strict: strict, Remaining: map[int]float64{0: tc.grams}})
+				if status(r, tc.gate) != tc.want || (r.Result == Fail) != (tc.want == Fail) {
+					t.Fatalf("strict=%v: %+v", strict, r)
+				}
+				if tc.unknown {
+					g := gateFor(r, tc.gate, 0)
+					if g.OperatorEstimate == nil || g.OperatorEstimate.AMSRemainG != nil || g.OperatorEstimate.AMSRemainPct != nil {
+						t.Fatalf("unknown AMS evidence: %+v", g)
+					}
+				}
+			}
+		})
+	}
+}
