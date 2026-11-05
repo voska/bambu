@@ -63,9 +63,11 @@ func TestRemainingEstimateCannotBypassInvalidJobUsage(t *testing.T) {
 		t.Fatal("fixture must reproduce nonfinite job usage")
 	}
 	for _, remaining := range []map[int]float64{nil, {0: 50}} {
-		r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayIDs: []int{0}, Remaining: remaining})
-		if status(r, "filament_amount") != Fail {
-			t.Fatalf("invalid job usage must still FAIL with a checked estimate: %+v", r)
+		for _, strict := range []bool{false, true} {
+			r := Run(Input{Printer: shop, Job: j, Status: idleStatus(t), TrayIDs: []int{0}, Remaining: remaining, Strict: strict})
+			if status(r, "filament_amount") != Fail {
+				t.Fatalf("invalid job usage must still FAIL with a checked estimate: %+v", r)
+			}
 		}
 	}
 }
