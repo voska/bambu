@@ -61,6 +61,8 @@ bambu monitor --snapshot-at-layer 2 --json                     # NDJSON events; 
 
 **Slots** are `1`–`4` (first AMS) or `A1`–`D4`. Preflight checks that the slot's filament type matches the sliced one.
 
+**Checked spool amount:** when a person reports a physically checked amount and AMS remaining telemetry is wrong, pass that amount (e.g. `--filament-remaining A2=50g`) to both the dry-run and send. Use the same amount in both and repeat per checked slot. It applies only to that invocation. Sufficient estimates WARN with the stated amount and original AMS reading, including with `--strict`; report that WARN. Insufficient estimates still FAIL against the existing requirement of job grams × 1.15 + 5 g (15% + 5 g reserve). Other gates remain enforced.
+
 **Two colours, changing at a layer height** (the AMS swaps by itself, from the G-code):
 
 ```bash
