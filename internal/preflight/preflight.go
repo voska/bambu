@@ -230,7 +230,7 @@ func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool,
 		}
 		g = append(g, Gate{
 			Gate: "filament_amount", Status: st,
-			Detail:           fmt.Sprintf("slot %s operator estimate %g g; AMS %s; job needs %.1f g (+15%%, +5 g) = %.2f g", label, *estimate, ams, need.UsedG, required),
+			Detail:           fmt.Sprintf("slot %s operator estimate %g g; AMS %s; job needs %.1f g (+15%%, +5 g) = %g g", label, *estimate, ams, need.UsedG, required),
 			Fix:              fix,
 			OperatorEstimate: &StatedAmount{StatedG: *estimate, AMSRemainG: tray.RemainG, AMSRemainPct: tray.RemainPct, RequiredG: required},
 		})

@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/voska/bambu/internal/job"
@@ -16,6 +17,7 @@ func TestRemainingEstimateGates(t *testing.T) {
 	}{
 		{"sufficient", 50, false, false, Warn, "filament_amount"},
 		{"insufficient", 19, false, false, Fail, "filament_amount"},
+		{"rounded threshold", 19.14, false, false, Fail, "filament_amount"},
 		{"at reserve", 12.3*1.15 + 5, false, false, Warn, "filament_amount"},
 		{"below reserve", 12.3*1.15 + 5 - 0.001, false, false, Fail, "filament_amount"},
 		{"unknown sufficient", 50, true, false, Warn, "filament_amount"},
@@ -36,6 +38,9 @@ func TestRemainingEstimateGates(t *testing.T) {
 				r := Run(Input{Printer: shop, Job: j, Status: s, TrayIDs: []int{0}, Strict: strict, Remaining: map[int]float64{0: tc.grams}})
 				if status(r, tc.gate) != tc.want || (r.Result == Fail) != (tc.want == Fail) {
 					t.Fatalf("strict=%v: %+v", strict, r)
+				}
+				if tc.gate == "filament_amount" && !strings.Contains(gateFor(r, tc.gate, 0).Detail, "= 19.145 g") {
+					t.Fatalf("required grams must not round down: %+v", r.Gates)
 				}
 				if tc.unknown {
 					g := gateFor(r, tc.gate, 0)
