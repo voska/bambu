@@ -63,7 +63,7 @@ bambu monitor --snapshot-at-layer 2 --json                     # NDJSON events; 
 
 **Timelapse:** `print send` records by default. `[print] timelapse = false` changes the config default; `--timelapse` or `--no-timelapse` overrides it for one print. Explicit `--timelapse=false` is supported; do not combine the two flags.
 
-**Batches:** pass separate inputs to `slice` instead of hand-merging them. Studio arranges one plate with `--part-spacing` (default/minimum 3 mm), preserving orientation unless `--auto-orient` is explicit. Batches that need several plates or lose objects fail before output is published. Summary `models` lists inputs; `model` remains the first input.
+**Batches:** pass separate inputs to `slice` instead of hand-merging them. Studio arranges one plate with `--part-spacing` (default/minimum 3 mm), preserving orientation unless `--auto-orient` is explicit. Batches that need several plates or produce fewer plate objects than input files fail before output is published. Check every expected part and quantity in the preview and summary. Summary `models` lists inputs; `model` remains the first input.
 
 **X1C startup clearance:** preflight reads layer-1 object lines and arcs after slicing and rejects the X18–240 / Y0–12 front strip and X0–18 / Y0–28 corner, expanded by 1 mm. Collisions FAIL. Missing layer/object markers or unsupported coordinates/arcs are NOT VERIFIED and FAIL in strict checks or send dry runs. A busy-printer failure remains independent of the geometry result. Never send a plate with a failed gate.
 
