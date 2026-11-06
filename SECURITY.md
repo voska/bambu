@@ -26,4 +26,5 @@ as is practical, crediting reporters who wish to be named.
   process listings; errors are redacted.
 - Printers use self-signed TLS certificates, so `bambu` does not verify them. Only use it on networks you trust.
 - `print send`, `print pause|resume|stop` require `--confirm`; `print send` also requires a passing preflight.
-  `bambu` never changes printer settings. Never let an agent pass `--confirm` without a human's approval.
+  `ams set` can record human-identified non-RFID spool metadata while idle, with physical detection and verified read-back.
+  AI protections and network settings remain read-only. Never let an agent pass `--confirm` without a human's approval.

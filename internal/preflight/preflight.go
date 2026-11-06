@@ -148,7 +148,7 @@ func Run(in Input) Result {
 	pr := s.Protections
 	g.add("ai_protections", isTrue(pr.FirstLayerInspector) && isTrue(pr.SpaghettiDetector) && isTrue(pr.PrintHalt), Warn,
 		fmt.Sprintf("first_layer_inspector=%s spaghetti_detector=%s print_halt=%s", boolStr(pr.FirstLayerInspector), boolStr(pr.SpaghettiDetector), boolStr(pr.PrintHalt)),
-		"enable them on the printer (bambu never changes printer settings)")
+		"enable them on the printer (bambu never changes AI protections)")
 	if in.FTPSCheck != nil {
 		err := in.FTPSCheck()
 		detail := "implicit FTPS login + listing OK"
@@ -192,7 +192,18 @@ func filamentGates(s printer.Status, need job.Filament, trayID int, strict bool,
 		g.add("tray", false, Fail, "slot "+label+" not reported by the AMS", "check the AMS is connected, or pick another slot")
 		return g
 	case !tray.Loaded:
-		g.add("tray", false, Fail, "slot "+label+" is empty", fmt.Sprintf("load %s into AMS slot %s", need.Type, label))
+		detail := "slot " + label + " has no material metadata; filament presence is unknown"
+		fix := fmt.Sprintf("check whether slot %s holds a spool; if so, identify it and configure its material (bambu ams set --slot %s --help); if empty, load %s", label, label, need.Type)
+		if tray.Present != nil {
+			if *tray.Present {
+				detail = "slot " + label + " is untyped (spool detected; no material set)"
+				fix = "identify the physical spool, then configure its material (bambu ams set --slot " + label + " --help)"
+			} else {
+				detail = "slot " + label + " is empty"
+				fix = fmt.Sprintf("load %s into AMS slot %s", need.Type, label)
+			}
+		}
+		g.add("tray", false, Fail, detail, fix)
 		return g
 	}
 	exact := strings.EqualFold(tray.Type, need.Type)
