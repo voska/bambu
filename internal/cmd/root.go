@@ -32,6 +32,7 @@ type CLI struct {
 	AMS       AMSCmd       `cmd:"" help:"Configure the material physically loaded in an AMS slot."`
 	Monitor   MonitorCmd   `cmd:"" help:"Follow the current job until it ends; exit code reflects the outcome."`
 	Camera    CameraCmd    `cmd:"" help:"Printer camera."`
+	Timelapse TimelapseCmd `cmd:"" help:"Printer timelapse videos (read-only)."`
 	Light     LightCmd     `cmd:"" help:"Read or switch the chamber light (verified by read-back)."`
 	Printers  PrinterCmd   `cmd:"" name:"printer" help:"Manage configured printers."`
 	Auth      AuthCmd      `cmd:"" help:"Access codes (OS keychain)."`

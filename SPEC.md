@@ -38,7 +38,7 @@ Out of scope for v0.1:
 | Secrets | `zalando/go-keyring`; service `bambu`, account `<serial>` | pure Go; on macOS it writes via `security -i` on stdin, so the secret is never in argv. Keyed by serial so renaming a printer keeps its code |
 | Access code resolution | keychain → `BAMBU_ACCESS_CODE` → (macOS/Windows/Linux) Bambu Studio's `BambuStudio.conf` (`access_code`/`user_access_code` by serial), used only as a fallback | explicit, discoverable; source is reported by `auth status` |
 | MQTT | `eclipse/paho.mqtt.golang` | stable, small |
-| FTPS | small built-in implicit-TLS client (`internal/ftps`) | the printer requires TLS session reuse on data connections and implicit TLS on 990; we need STOR, RETR, NLST, SIZE only |
+| FTPS | small built-in implicit-TLS client (`internal/ftps`) | the printer requires TLS session reuse on data connections and implicit TLS on 990; STOR, RETR, NLST, SIZE, MDTM |
 | Camera | shell out to `ffmpeg` (`-rtsp_transport tcp -tls_verify 0`) | ffmpeg ≥ 8 verifies TLS by default; the printer cert is self-signed |
 | Slicer | Bambu Studio CLI, presets flattened by us (§8) | the CLI does not resolve `inherits`/`include` |
 | Colors | `muesli/termenv`; honours `NO_COLOR` / `--no-color` | qbo-cli pattern |
@@ -59,6 +59,8 @@ bambu filament load --slot S --confirm [--timeout 5m]  # paused or idle; exit 0 
 bambu ams set --slot S --type PLA --filament-id GFL99 --color RRGGBB --nozzle-temp-min T --nozzle-temp-max T (--dry-run | --confirm) [--wait 10s]
 bambu monitor [--snapshot-at-layer N] [--snapshot-dir D] [--exec CMD] [--timeout 2h]
 bambu camera snapshot [-o file.jpg]
+bambu timelapse list
+bambu timelapse pull [<name> | --latest] [-o file-or-existing-directory]
 bambu printer add <name> --host H --serial S [--model X1C] [--nozzle 0.4] [--plate textured_plate] [--default]
 bambu printer list | remove <name> --confirm | default <name> | discover [--timeout 10s]
 bambu auth set <printer>           # access code from stdin (or TTY prompt)
@@ -88,6 +90,8 @@ Slots: `1`–`4` (first AMS) or `A1`…`D4`, plus `ext` for the external spool (
   - status: state
   - slice: the path of the .gcode.3mf
   - snapshot: the path of the image
+  - timelapse list: video basenames, one per line
+  - timelapse pull: the absolute downloaded path
   - ams set: the normalized slot label
   - send: state
   - preflight: PASS/FAIL
@@ -148,6 +152,30 @@ Precedence:
 - Implicit TLS on port 990, user `bblp`. Sequence: `PBSZ 0`, `PROT P`, `TYPE I`, `PASV`.
 - Data connections resume the control TLS session. Connect to the configured host, not the PASV IP.
 - Upload to `/<name>.gcode.3mf`, then read it back (`RETR`) and compare MD5.
+- Timelapses: `NLST /timelapse/`, then `SIZE` and `MDTM` for immediate `.mp4`/`.avi`
+  entries (case insensitive, no hidden files or recursion). `MDTM` is interpreted
+  as UTC per RFC 3659 and emitted as RFC 3339; X1C reports seconds, fractional
+  seconds are preserved if provided. Sort by mtime descending, then name descending.
+  Listing JSON is `{"printer":"name","timelapses":[{"name":"video.mp4","bytes":123,"mtime":"2026-01-02T03:04:05Z"}]}`.
+  Empty is `timelapses:[]` with exit 3. An unavailable directory or invalid metadata
+  is an error (exit 8), never an empty result.
+- Pull requires exactly one basename or `--latest` (invalid selection exits 2;
+  named file absent exits 5; a named zero-byte file exits 1; latest with no
+  nonempty candidates exits 3). `--latest` skips zero-byte placeholders.
+  Output defaults to the
+  basename in cwd; `-o` is a file or existing directory, never stdout (`-`).
+  Stream `RETR` into a same-directory private temp file. Require successful
+  transfer completion, nonzero bytes matching the listed size, and unchanged
+  `SIZE`/`MDTM` afterward. Changed or incomplete transfers exit 8 and remove the
+  temp file. Flush and close before publishing with a non-overwriting hard link;
+  existing destinations or local filesystem failures exit 1. Temp files are also
+  removed on interruption. No remote writes or deletes are issued.
+  Pull JSON is `{"printer":"name","name":"video.mp4","path":"/absolute/video.mp4","bytes":123,"mtime":"2026-01-02T03:04:05Z"}`;
+  plain columns are printer, name, path, bytes, mtime. List plain columns are
+  name, bytes, mtime. File integrity is verified by byte count and stable metadata;
+  playback is not validated by the CLI.
+  Downloads use a 60-second read idle timeout; context deadlines and cancellation
+  still apply. Local write failures exit 1, separately from network failures (8).
 
 **`project_file` payload** (verified against X1C firmware 01.12 on 2026-09-23 → `result: SUCCESS`, then RUNNING):
 

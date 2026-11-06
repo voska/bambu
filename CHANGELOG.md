@@ -7,6 +7,7 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- `timelapse list` and `timelapse pull <name>|--latest [-o path]` read SD-card videos over FTPS with the existing access-code resolver. Listings include byte counts and modification times; downloads verify size and stable metadata, refuse overwrites, and never modify printer files.
 - `ams set` records non-RFID spool metadata while idle, with physical filament detection, confirmation, dry-run support, and verified read-back. Status trays include nullable `present` physical detection without changing `loaded`.
 - Repeatable `--filament-remaining A2=50g` on `preflight` and `print send` for a checked spool when AMS remaining telemetry is wrong. Sufficient estimates WARN with the stated amount and original AMS reading; insufficient estimates still FAIL against the existing 15% + 5 g reserve, including with `--strict`. Estimates apply only to the current invocation. JSON amount gates include an optional `operator_estimate` with both sources and the required grams.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
