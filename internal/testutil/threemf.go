@@ -15,6 +15,8 @@ import (
 
 // Opts describes a synthetic sliced plate.
 type Opts struct {
+	Gcode        string   // optional synthetic toolpath
+	Objects      []string // optional object names
 	PrinterModel string
 	Nozzle       string
 	BedType      string
@@ -58,6 +60,11 @@ func Write(t *testing.T, dir, name string, o Opts) string {
 		_, _ = w.Write(b)
 	}
 	gcode := []byte("; HEADER_BLOCK_START\n; model printing time: 20m 1s; total estimated time: 27m 14s\n; total layer number: 113\n; HEADER_BLOCK_END\nG28\n")
+	if o.Gcode != "" {
+		gcode = []byte(o.Gcode)
+	} else {
+		gcode = append(gcode, []byte("G90\nM83\n; layer num/total_layer_count: 1/113\n; OBJECT_ID: 1\nG1 X50 Y50\nG1 X60 Y50 E1\n")...)
+	}
 	if !o.NoGcode {
 		add("Metadata/plate_1.gcode", gcode)
 		sum := md5.Sum(gcode) //nolint:gosec // fixture
@@ -97,7 +104,15 @@ func Write(t *testing.T, dir, name string, o Opts) string {
 		total += g
 		fmt.Fprintf(&fx, `<filament id="%d" tray_info_idx="%s" type="%s" color="#00AE42" used_m="3.4" used_g="%.2f"/>`, i+1, id, typ, g)
 	}
-	si := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><config><plate><metadata key="index" value="1"/><metadata key="prediction" value="1634"/><metadata key="weight" value="%.2f"/><object identify_id="1" name="part.stl"/>%s</plate></config>`, total, fx.String())
+	objects := o.Objects
+	if len(objects) == 0 {
+		objects = []string{"part.stl"}
+	}
+	var ox strings.Builder
+	for i, name := range objects {
+		fmt.Fprintf(&ox, `<object identify_id="%d" name="%s"/>`, i+1, name)
+	}
+	si := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><config><plate><metadata key="index" value="1"/><metadata key="prediction" value="1634"/><metadata key="weight" value="%.2f"/>%s%s</plate></config>`, total, ox.String(), fx.String())
 	add("Metadata/slice_info.config", []byte(si))
 	add("Metadata/plate_1.png", []byte("\x89PNG\r\n\x1a\n"))
 	if err := zw.Close(); err != nil {

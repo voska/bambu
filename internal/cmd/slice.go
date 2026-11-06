@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,21 +18,26 @@ import (
 
 // SliceCmd slices a model.
 type SliceCmd struct {
-	Model      string    `arg:"" help:"Model file (.stl, .3mf, .obj, .amf, .step/.stp with CadQuery)." type:"path"`
-	Recipe     string    `short:"r" required:"" help:"Recipe name (see: bambu recipe list)."`
-	Filament   []string  `short:"f" sep:"none" help:"Filament preset to use instead of the recipe's (e.g. \"Generic PLA\", \"Bambu PLA Matte\"). Repeat once per filament, in print order, for a multi-colour job."`
-	Color      []string  `name:"color" aliases:"colour" sep:"none" placeholder:"RRGGBB" help:"Spool colour per --filament, same order (e.g. FFFFFF). Required with two or more filaments: Bambu Studio sizes the purge between them from the colours."`
-	ChangeZ    []float64 `name:"filament-change-z" sep:"none" placeholder:"Z" help:"The next --filament starts on the first layer above Z mm (the top of the previous filament's last layer); the AMS swaps automatically. Once per filament after the first."`
-	Set        []string  `short:"s" sep:"none" help:"Override a Bambu Studio setting: key=value (repeatable; comma-separated batches and JSON lists supported)." placeholder:"KEY=VALUE"`
-	Name       string    `short:"n" help:"Output base name (default <model>-<recipe>)."`
-	Out        string    `short:"o" help:"Output directory (default: config output_dir, else current dir)." type:"path"`
-	AutoOrient bool      `name:"auto-orient" help:"Let the slicer re-orient the model (default: keep the model's orientation)."`
-	Slot       string    `help:"Record the intended AMS slot in the summary; send still requires --slot."`
-	Strict     bool      `help:"Require a plate preview and reject slicer warnings before publishing outputs."`
+	Models        []string  `arg:"" name:"model" help:"Model files (.stl, .3mf, .obj, .amf, .step/.stp with CadQuery)." type:"path"`
+	Recipe        string    `short:"r" required:"" help:"Recipe name (see: bambu recipe list)."`
+	Filament      []string  `short:"f" sep:"none" help:"Filament preset to use instead of the recipe's (e.g. \"Generic PLA\", \"Bambu PLA Matte\"). Repeat once per filament, in print order, for a multi-colour job."`
+	Color         []string  `name:"color" aliases:"colour" sep:"none" placeholder:"RRGGBB" help:"Spool colour per --filament, same order (e.g. FFFFFF). Required with two or more filaments: Bambu Studio sizes the purge between them from the colours."`
+	ChangeZ       []float64 `name:"filament-change-z" sep:"none" placeholder:"Z" help:"The next --filament starts on the first layer above Z mm (the top of the previous filament's last layer); the AMS swaps automatically. Once per filament after the first."`
+	Set           []string  `short:"s" sep:"none" help:"Override a Bambu Studio setting: key=value (repeatable; comma-separated batches and JSON lists supported)." placeholder:"KEY=VALUE"`
+	Name          string    `short:"n" help:"Output base name (default <model>-<recipe>)."`
+	Out           string    `short:"o" help:"Output directory (default: config output_dir, else current dir)." type:"path"`
+	PartSpacingMM float64   `name:"part-spacing" default:"3" placeholder:"MM" help:"Minimum spacing between objects in a batch, in mm (at least 3)."`
+	AutoOrient    bool      `name:"auto-orient" help:"Let the slicer re-orient the model (default: keep the model's orientation)."`
+	Slot          string    `help:"Record the intended AMS slot in the summary; send still requires --slot."`
+	Strict        bool      `help:"Require a plate preview and reject slicer warnings before publishing outputs."`
 }
 
 // Run executes the command.
 func (c *SliceCmd) Run(g *Globals) error {
+	if c.PartSpacingMM < 3 || math.IsNaN(c.PartSpacingMM) || math.IsInf(c.PartSpacingMM, 0) {
+		return errfmt.New(errfmt.ExitUsage, "--part-spacing must be finite and at least 3 mm")
+	}
+
 	if c.Slot != "" {
 		tray, err := printer.ParseSlot(c.Slot)
 		if err != nil {
@@ -58,7 +64,7 @@ func (c *SliceCmd) Run(g *Globals) error {
 	cfg, _ := g.ConfigFile()
 	name := c.Name
 	if name == "" {
-		stem := strings.TrimSuffix(filepath.Base(c.Model), filepath.Ext(c.Model))
+		stem := strings.TrimSuffix(filepath.Base(c.Models[0]), filepath.Ext(c.Models[0]))
 		name = stem + "-" + r.Name
 	}
 	name = slicer.SafeName(name)
@@ -76,10 +82,10 @@ func (c *SliceCmd) Run(g *Globals) error {
 	if err != nil {
 		cache = os.TempDir()
 	}
-	g.Out.Hint("slicing %s with %s for %s (%s %s mm)…", filepath.Base(c.Model), r.Name, p.Name, m.Alias, p.NozzleString())
+	g.Out.Hint("slicing %s with %s for %s (%s %s mm)…", filepath.Base(c.Models[0]), r.Name, p.Name, m.Alias, p.NozzleString())
 	st.DetectVersion(g.Ctx)
 	sum, err := slicer.Run(g.Ctx, st, ix, slicer.Request{
-		Model: c.Model, Recipe: r, MachinePreset: m.MachinePreset(p.NozzleString()), Plate: p.Plate,
+		Models: c.Models, PartSpacingMM: c.PartSpacingMM, Recipe: r, MachinePreset: m.MachinePreset(p.NozzleString()), Plate: p.Plate,
 		Filaments: c.Filament, Colors: c.Color, ChangeZs: c.ChangeZ, Sets: c.Set, Name: name, OutDir: out,
 		WorkDir: filepath.Join(cache, "bambu", "slice", name), AutoOrient: c.AutoOrient,
 		StepPython: expand(cfg.Slicer.StepPython), SuggestedSlot: c.Slot, Strict: c.Strict,

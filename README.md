@@ -91,11 +91,29 @@ It is never printed, and never written to the config.
 bambu recipe list                                   # prototype-pla, solid-pla, functional-pla, functional-petg
 bambu slice part.3mf --recipe solid-pla             # STL / 3MF / OBJ
 bambu slice part.stl --recipe prototype-pla --set wall_loops=3 --filament "Bambu PLA Matte"
+bambu slice one.stl two.stl three.stl --recipe solid-pla --part-spacing 3
 bambu camera snapshot -o plate.jpg                  # look at the plate
 bambu preflight part-solid-pla.gcode.3mf --slot 4   # PASS/WARN/FAIL gates
 bambu print send part-solid-pla.gcode.3mf --slot 4 --confirm
 bambu monitor --snapshot-at-layer 2 --exec 'notify-send "$BAMBU_EVENT $BAMBU_STATE"'
 ```
+
+Multiple inputs remain separate objects. Studio arranges them on one plate with at least
+3 mm between parts; `--part-spacing` can increase that gap. Orientation is preserved
+unless `--auto-orient` is given. Batches that need several plates fail before publishing.
+
+`print send` records a timelapse by default. `--no-timelapse` disables it for one print;
+`--timelapse` explicitly enables it. To change the default in `config.toml`:
+
+```toml
+[print]
+timelapse = false
+```
+
+X1C preflight checks first-layer object extrusion against the startup lines at
+X18–240 / Y0–12 and the X0–18 / Y0–28 corner, with a 1 mm margin. Collisions fail.
+Missing or unsupported toolpaths report NOT VERIFIED and fail with `--strict` or
+`print send --dry-run`. Travel and startup extrusion are excluded.
 
 ### Two colours
 

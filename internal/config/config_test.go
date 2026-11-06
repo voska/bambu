@@ -91,3 +91,26 @@ func TestBadTOML(t *testing.T) {
 		t.Fatalf("want config error, got %v", err)
 	}
 }
+
+func TestPrintTimelapseRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Print.RecordTimelapse() {
+		t.Fatal("missing config defaults off")
+	}
+	off := false
+	c.Print.Timelapse = &off
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Print.RecordTimelapse() {
+		t.Fatal("explicit false lost on save/load")
+	}
+}

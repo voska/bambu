@@ -52,12 +52,13 @@ type Result struct {
 
 // Input bundles everything the gates look at.
 type Input struct {
-	Printer   *config.Printer
-	Job       *job.Job
-	Status    printer.Status
-	TrayIDs   []int           // the AMS tray feeding each job filament, in filament order
-	Strict    bool            // retain bambu-op's exact material and known temperature requirements
-	Remaining map[int]float64 // operator estimates in grams, keyed by AMS tray ID; this invocation only
+	Printer          *config.Printer
+	Job              *job.Job
+	Status           printer.Status
+	TrayIDs          []int           // the AMS tray feeding each job filament, in filament order
+	Strict           bool            // retain bambu-op's exact material and known temperature requirements
+	RequireClearance bool            // dry-run requires verified geometry without changing the other strict gates
+	Remaining        map[int]float64 // operator estimates in grams, keyed by AMS tray ID; this invocation only
 	// FTPSCheck, if set, performs a read-only FTPS login + listing and returns its error.
 	FTPSCheck func() error
 }
@@ -106,6 +107,26 @@ func Run(in Input) Result {
 	}
 	g.add("sliced_for_printer", j.PrinterModel == want, Fail, fmt.Sprintf("file=%q printer=%q", j.PrinterModel, want),
 		"re-slice for this printer (bambu slice --printer "+p.Name+")")
+	if model.Alias == "X1C" {
+		clearance := j.FirstLayer
+		status := Pass
+		detail := fmt.Sprintf("%d first-layer object extrusions; %d intersect X1C start zones (1 mm margin)", clearance.Extrusions, clearance.Conflicts)
+		if !clearance.Verified {
+			status = Warn
+			if in.Strict || in.RequireClearance {
+				status = Fail
+			}
+			detail = "NOT VERIFIED: " + clearance.Reason
+		}
+		if clearance.Conflicts > 0 {
+			status = Fail
+		}
+		gate := Gate{Gate: "start_line_clearance", Status: status, Detail: detail}
+		if status != Pass {
+			gate.Fix = "re-slice with separate objects clear of X18–240 Y0–12 and X0–18 Y0–28, plus 1 mm; inspect the first layer"
+		}
+		g = append(g, gate)
+	}
 	used := len(j.Filaments)
 	g.add("single_filament", used == len(in.TrayIDs), Fail, fmt.Sprintf("%d filament%s in plate, %d slot%s given", used, plural(used), len(in.TrayIDs), plural(len(in.TrayIDs))),
 		"pass one --slot per filament, in filament order (e.g. --slot A4 --slot A1)")

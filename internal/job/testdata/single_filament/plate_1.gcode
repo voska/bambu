@@ -25,6 +25,12 @@ T1000
 ; CHANGE_LAYER
 ; Z_HEIGHT: 0.2
 ; layer num/total_layer_count: 1/27
+; Synthetic first-layer path for the trimmed fixture
+G90
+M83
+; OBJECT_ID: 1
+G1 X50 Y50
+G1 X60 Y50 E1
 ; CHANGE_LAYER
 ; Z_HEIGHT: 0.4
 ; layer num/total_layer_count: 2/27
