@@ -10,6 +10,7 @@ import (
 	"crypto/md5" //nolint:gosec // MD5 is the printer's integrity checksum, not a security primitive
 	"crypto/tls"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -23,11 +24,13 @@ import (
 
 // Client is an authenticated FTPS session.
 type Client struct {
-	host    string
-	cfg     *tls.Config
-	ctrl    *textproto.Conn
-	raw     net.Conn
-	timeout time.Duration
+	host     string
+	cfg      *tls.Config
+	ctrl     *textproto.Conn
+	raw      net.Conn
+	timeout  time.Duration
+	deadline time.Time
+	stop     func() bool
 }
 
 // Dial connects with implicit TLS, logs in and enables protected binary transfers.
@@ -45,6 +48,8 @@ func Dial(ctx context.Context, host string, port int, user, pass string) (*Clien
 			WithHint("check the printer is reachable and in LAN mode")
 	}
 	c := &Client{host: host, cfg: cfg, raw: conn, ctrl: textproto.NewConn(conn), timeout: 60 * time.Second}
+	c.deadline, _ = ctx.Deadline()
+	c.stop = context.AfterFunc(ctx, func() { _ = conn.Close() })
 	steps := []struct {
 		cmd  string
 		code int
@@ -57,6 +62,7 @@ func Dial(ctx context.Context, host string, port int, user, pass string) (*Clien
 			_, err = c.cmd(s.code, "%s", s.cmd)
 		}
 		if err != nil {
+			c.stop()
 			_ = conn.Close()
 			if s.code == 230 {
 				return nil, errfmt.Wrap(errfmt.ExitAuth, err, "FTPS login refused").
@@ -77,7 +83,11 @@ func redact(cmd string) string {
 
 // cmd sends a command (empty = just read) and expects a reply code (prefix match: 2 accepts any 2xx).
 func (c *Client) cmd(expect int, format string, args ...any) (string, error) {
-	_ = c.raw.SetDeadline(time.Now().Add(c.timeout))
+	deadline := time.Now().Add(c.timeout)
+	if !c.deadline.IsZero() && c.deadline.Before(deadline) {
+		deadline = c.deadline
+	}
+	_ = c.raw.SetDeadline(deadline)
 	if format != "" {
 		if err := c.ctrl.PrintfLine(format, args...); err != nil {
 			return "", fmt.Errorf("send: %w", err)
@@ -107,6 +117,9 @@ func (c *Client) pasv(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("data connection: %w", err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
 	// The TLS handshake happens lazily, after the transfer command is sent (servers accept the
 	// data connection's TLS only once they have the command).
 	return tls.Client(conn, c.cfg), nil
@@ -135,6 +148,8 @@ func (c *Client) transfer(ctx context.Context, command string, fn func(net.Conn)
 	if err != nil {
 		return err
 	}
+	stop := context.AfterFunc(ctx, func() { _ = data.Close() })
+	defer stop()
 	if _, err := c.cmd(1, "%s", command); err != nil { // 125/150
 		_ = data.Close()
 		return err
@@ -181,6 +196,64 @@ func (c *Client) MD5(ctx context.Context, path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), err
 }
 
+// Retrieve downloads path to w without changing the remote file.
+func (c *Client) Retrieve(ctx context.Context, path string, w io.Writer) (int64, error) {
+	if err := checkPath(path); err != nil {
+		return 0, err
+	}
+	var n int64
+	err := c.transfer(ctx, "RETR "+path, func(conn net.Conn) error {
+		// Large videos need an idle timeout, not a fixed transfer deadline.
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			return fmt.Errorf("set download deadline: %w", err)
+		}
+		buf := make([]byte, 32*1024)
+		for {
+			deadline := time.Now().Add(c.timeout)
+			if limit, ok := ctx.Deadline(); ok && limit.Before(deadline) {
+				deadline = limit
+			}
+			if err := conn.SetReadDeadline(deadline); err != nil {
+				return fmt.Errorf("set download read deadline: %w", err)
+			}
+			nr, readErr := conn.Read(buf)
+			if nr > 0 {
+				nw, writeErr := w.Write(buf[:nr])
+				n += int64(nw)
+				if writeErr == nil && nw != nr {
+					writeErr = io.ErrShortWrite
+				}
+				if writeErr != nil {
+					return errfmt.Wrap(errfmt.ExitError, writeErr, "write timelapse download")
+				}
+			}
+			if errors.Is(readErr, io.EOF) {
+				return nil
+			}
+			if readErr != nil {
+				return fmt.Errorf("read download: %w", readErr)
+			}
+		}
+	})
+	return n, err
+}
+
+// ModTime returns path's modification time in UTC (RFC 3659 MDTM).
+func (c *Client) ModTime(path string) (time.Time, error) {
+	if err := checkPath(path); err != nil {
+		return time.Time{}, err
+	}
+	msg, err := c.cmd(213, "MDTM %s", path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	t, err := time.Parse("20060102150405", strings.TrimSpace(msg))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("bad MDTM reply %q: %w", msg, err)
+	}
+	return t, nil
+}
+
 // List returns the names in dir (NLST).
 func (c *Client) List(ctx context.Context, dir string) ([]string, error) {
 	if err := checkPath(dir); err != nil {
@@ -218,6 +291,7 @@ func (c *Client) Size(path string) (int64, error) {
 
 // Close ends the session.
 func (c *Client) Close() error {
+	defer c.stop()
 	_, _ = c.cmd(221, "QUIT")
 	return c.raw.Close() //nolint:wrapcheck // best-effort close
 }

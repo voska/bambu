@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"path"
 	"strings"
 	"sync"
 	"testing"
@@ -21,12 +22,16 @@ import (
 // FTPSServer is a tiny implicit-FTPS server that, like the printer, refuses data connections
 // that do not resume the control connection's TLS session.
 type FTPSServer struct {
-	t     *testing.T
-	ln    net.Listener
-	cfg   *tls.Config
-	mu    sync.Mutex
-	Files map[string][]byte
-	Code  string
+	t             *testing.T
+	ln            net.Listener
+	cfg           *tls.Config
+	mu            sync.Mutex
+	Files         map[string][]byte
+	Code          string
+	ModTimes      map[string]time.Time
+	Replies       map[string]string
+	RetrieveReply string
+	RetrieveDelay time.Duration
 }
 
 // NewFTPSServer starts a fake printer FTPS server on 127.0.0.1 (password 12345678).
@@ -46,7 +51,7 @@ func NewFTPSServer(t *testing.T) *FTPSServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &FTPSServer{t: t, ln: ln, cfg: cfg, Files: map[string][]byte{"/existing.gcode.3mf": []byte("hello")}, Code: "12345678"}
+	s := &FTPSServer{t: t, ln: ln, cfg: cfg, Files: map[string][]byte{"/existing.gcode.3mf": []byte("hello")}, Code: "12345678", ModTimes: map[string]time.Time{}, Replies: map[string]string{}}
 	go s.serve()
 	t.Cleanup(func() { _ = ln.Close() })
 	return s
@@ -91,6 +96,10 @@ func (s *FTPSServer) handle(c net.Conn) {
 			return
 		}
 		cmd, arg, _ := strings.Cut(strings.TrimSpace(line), " ")
+		if reply, ok := s.Replies[strings.TrimSpace(line)]; ok {
+			say("%s", reply)
+			continue
+		}
 		switch cmd {
 		case "USER":
 			say("331 password please")
@@ -126,16 +135,23 @@ func (s *FTPSServer) handle(c net.Conn) {
 			}
 			say("150 ok")
 			if dc, ok := accept(); ok {
+				time.Sleep(s.RetrieveDelay)
 				_, _ = dc.Write(b)
 				_ = dc.Close()
-				say("226 done")
+				if s.RetrieveReply != "" {
+					say("%s", s.RetrieveReply)
+				} else {
+					say("226 done")
+				}
 			}
 		case "NLST":
 			say("150 ok")
 			if dc, ok := accept(); ok {
 				s.mu.Lock()
 				for n := range s.Files {
-					fmt.Fprintf(dc, "%s\r\n", n)
+					if path.Dir(n) == path.Clean(arg) {
+						fmt.Fprintf(dc, "%s\r\n", n)
+					}
 				}
 				s.mu.Unlock()
 				_ = dc.Close()
@@ -150,6 +166,19 @@ func (s *FTPSServer) handle(c net.Conn) {
 				continue
 			}
 			say("213 %d", len(b))
+		case "MDTM":
+			s.mu.Lock()
+			_, ok := s.Files[arg]
+			mtime := s.ModTimes[arg]
+			s.mu.Unlock()
+			if !ok {
+				say("550 not found")
+				continue
+			}
+			if mtime.IsZero() {
+				mtime = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+			}
+			say("213 %s", mtime.UTC().Format("20060102150405"))
 		case "QUIT":
 			say("221 bye")
 			return

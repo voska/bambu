@@ -53,11 +53,18 @@ Repeating the same settings published nothing. Other printer models remain unver
 - **`ams_mapping`:** Bambu Studio's "v0" format (`SelectMachine.cpp::get_ams_mapping_result`). One entry per project filament; the value is the global tray id (`ams_index*4 + slot`, 0-based); `-1` = unused. `[3]` = first AMS, slot 4 (verified). A two-filament job sends `[3, 0]` for A4 then A1 (from Studio's source; not yet verified on a real print). Studio also sends `ams_mapping2` (`[{ams_id, slot_id}]`); the verified single-filament payload omits it.
 - **Without Developer Mode**, the reply is a failure mentioning verification and HMS `0500_0500_0001_0007`. `bambu` maps that to exit 6.
 
-## FTPS (upload)
+## FTPS (upload and read-only downloads)
 
 - **Connection:** implicit TLS on `<host>:990`, user `bblp`. The sequence is `PBSZ 0` → `PROT P` → `TYPE I` → `PASV`.
 - **Data connections must resume the control connection's TLS session.** `bambu` shares one `tls.Config` with a session cache and an explicit `ServerName`, and does the data-channel TLS handshake after sending the transfer command. (verified: `NLST`, `SIZE`, `RETR` against the printer; `STOR` shares the same code path)
 - **Upload location:** jobs go to the SD root, `/<name>.gcode.3mf`, the same place Bambu Studio puts them.
+- **Timelapses:** `NLST /timelapse/` includes video files and a `thumbnail`
+  subdirectory. `timelapse list` reads immediate `.mp4`/`.avi` entries with `SIZE`
+  and `MDTM` (RFC 3659 UTC timestamps). The list never treats inaccessible metadata
+  as an empty directory. `pull` streams `RETR`, requires a successful final reply,
+  then compares the byte count and fresh `SIZE`/`MDTM` before publishing a local
+  file without overwriting. These commands issue no remote write or delete.
+  `NLST`, `SIZE`, and `MDTM` verified on an X1 Carbon on 2026-11-06.
 
 ## Camera
 

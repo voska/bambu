@@ -5,9 +5,14 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
+	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/voska/bambu/internal/errfmt"
 	"github.com/voska/bambu/internal/testutil"
 )
 
@@ -65,5 +70,107 @@ func TestParsePASV(t *testing.T) {
 		if _, err := parsePASV(bad); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
+	}
+}
+
+func TestRetrieveAndModTime(t *testing.T) {
+	s := testutil.NewFTPSServer(t)
+	s.ModTimes["/existing.gcode.3mf"] = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	c, err := Dial(context.Background(), "127.0.0.1", s.Port(), "bblp", "12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	var buf bytes.Buffer
+	n, err := c.Retrieve(context.Background(), "/existing.gcode.3mf", &buf)
+	if err != nil || n != 5 || buf.String() != "hello" {
+		t.Fatalf("retrieve: %d %q %v", n, buf.String(), err)
+	}
+	mtime, err := c.ModTime("/existing.gcode.3mf")
+	if err != nil || !mtime.Equal(s.ModTimes["/existing.gcode.3mf"]) {
+		t.Fatalf("mtime: %v %v", mtime, err)
+	}
+	if _, err := c.Retrieve(context.Background(), "/bad\r\nname", &buf); err == nil {
+		t.Fatal("accepted command injection")
+	}
+	if _, err := c.ModTime("/bad\nname"); err == nil {
+		t.Fatal("accepted command injection")
+	}
+}
+
+func TestModTimeRejectsMalformedReply(t *testing.T) {
+	s := testutil.NewFTPSServer(t)
+	s.Replies["MDTM /existing.gcode.3mf"] = "213 yesterday"
+	c, err := Dial(context.Background(), "127.0.0.1", s.Port(), "bblp", "12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := c.ModTime("/existing.gcode.3mf"); err == nil {
+		t.Fatal("accepted malformed MDTM")
+	}
+}
+
+func TestSessionCancellation(t *testing.T) {
+	s := testutil.NewFTPSServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c, err := Dial(ctx, "127.0.0.1", s.Port(), "bblp", "12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	cancel()
+	// The context callback closes the control socket, interrupting blocked I/O.
+	deadline := time.Now().Add(time.Second)
+	for {
+		if _, err := c.ModTime("/existing.gcode.3mf"); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cancelled session still usable")
+		}
+	}
+}
+
+type failedDownloadWriter struct{ short bool }
+
+func (w failedDownloadWriter) Write(p []byte) (int, error) {
+	if w.short {
+		return len(p) - 1, nil
+	}
+	return 0, io.ErrClosedPipe
+}
+
+func TestRetrieveLocalWriteFailure(t *testing.T) {
+	for _, short := range []bool{false, true} {
+		s := testutil.NewFTPSServer(t)
+		c, err := Dial(context.Background(), "127.0.0.1", s.Port(), "bblp", "12345678")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = c.Retrieve(context.Background(), "/existing.gcode.3mf", failedDownloadWriter{short: short})
+		var typed *errfmt.Error
+		if !errors.As(err, &typed) || typed.Code != errfmt.ExitError {
+			t.Errorf("local write failure must be distinguishable from network failure: %v", err)
+		}
+		c.Close()
+	}
+}
+
+func TestRetrieveReadIdleTimeout(t *testing.T) {
+	s := testutil.NewFTPSServer(t)
+	s.RetrieveDelay = 500 * time.Millisecond
+	c, err := Dial(context.Background(), "127.0.0.1", s.Port(), "bblp", "12345678")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.timeout = 100 * time.Millisecond
+	var buf bytes.Buffer
+	_, err = c.Retrieve(context.Background(), "/existing.gcode.3mf", &buf)
+	var timeout net.Error
+	if !errors.As(err, &timeout) || !timeout.Timeout() || !strings.Contains(err.Error(), "read download") {
+		t.Fatalf("stalled read must time out: %v", err)
 	}
 }

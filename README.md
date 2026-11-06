@@ -174,6 +174,30 @@ the tray's flow calibration unchanged and reports any calibration telemetry befo
 and after. Only use it after a human identifies the physical spool, never to bypass a
 preflight mismatch.
 
+### Download timelapses
+
+```bash
+bambu timelapse list --json
+bambu timelapse pull --latest -o ./latest-print.mp4
+bambu timelapse pull video_2026-01-02_03-04-05.mp4 -o ./videos/
+```
+
+These commands read `.mp4` and `.avi` files directly under the printer's
+`/timelapse/` directory using the configured LAN access code. Lists are ordered by
+modification time, then filename, newest first. JSON includes `printer` and
+`timelapses` entries with `name`, `bytes`, and UTC `mtime`; an empty list exits 3.
+Use `--quiet` for filenames or the absolute downloaded path, or `--plain` for TSV.
+`--latest` skips zero-byte recording placeholders; requesting an empty video by
+name exits 1.
+
+`-o` accepts a file path or an existing directory; without it, the video is saved
+in the current directory under its original name. Downloads never overwrite local
+files or change printer files. A failed or changing transfer leaves no completed
+file and exits 8; retry after recording finishes. Publishing the verified download
+requires a local filesystem with hard-link support. Recording must have been
+enabled when sending the job (`print send --timelapse`). Downloaded files are
+owner-only (0600).
+
 ### Safety model
 
 1. **`preflight` checks before anything is sent:**
