@@ -61,6 +61,12 @@ bambu monitor --snapshot-at-layer 2 --json                     # NDJSON events; 
 
 **Slots** are `1`–`4` (first AMS) or `A1`–`D4`. Preflight checks that the slot's filament type matches the sliced one.
 
+**Timelapse:** `print send` records by default. `[print] timelapse = false` changes the config default; `--timelapse` or `--no-timelapse` overrides it for one print. Explicit `--timelapse=false` is supported; do not combine the two flags.
+
+**Batches:** pass separate inputs to `slice` instead of hand-merging them. Studio arranges one plate with `--part-spacing` (default/minimum 3 mm), preserving orientation unless `--auto-orient` is explicit. Batches that need several plates or produce fewer plate objects than input files fail before output is published. Check every expected part and quantity in the preview and summary. Summary `models` lists inputs; `model` remains the first input.
+
+**X1C startup clearance:** preflight reads layer-1 object lines and arcs after slicing and rejects the X18–240 / Y0–12 front strip and X0–18 / Y0–28 corner, expanded by 1 mm. Collisions FAIL. Missing layer/object markers or unsupported coordinates/arcs are NOT VERIFIED and FAIL in strict checks or send dry runs. A busy-printer failure remains independent of the geometry result. Never send a plate with a failed gate.
+
 **Checked spool amount:** when a person reports a physically checked amount and AMS remaining telemetry is wrong, pass that amount (e.g. `--filament-remaining A2=50g`) to both the dry-run and send. Use the same amount in both and repeat per checked slot. It applies only to that invocation. Sufficient estimates WARN with the stated amount and original AMS reading, including with `--strict`; report that WARN. Insufficient estimates still FAIL against the existing requirement of job grams × 1.15 + 5 g (15% + 5 g reserve). Other gates remain enforced.
 
 **Two colours, changing at a layer height** (the AMS swaps by itself, from the G-code):

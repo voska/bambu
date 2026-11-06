@@ -29,6 +29,7 @@ JSON field names and exit codes are part of the public API.
   - job: `filament_changes`
 
 ### Changed
+- Update the agent skill and command reference for timelapse defaults and overrides, separate-model arrangement with at least 3 mm spacing, and strict/dry-run X1C startup-clearance refusal.
 - `print send` records a timelapse by default.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
