@@ -111,7 +111,8 @@ Upload a sliced file and start it (requires --confirm and a passing preflight).
 | `--filament-remaining` | []string |  | Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL. |
 | `--confirm` | bool |  | Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear. |
 | `--dry-run, -n` | bool |  | Run preflight and show the exact upload path and MQTT payload; send nothing. |
-| `--timelapse` | bool |  | Record a timelapse. |
+| `--timelapse` | bool | config, else true | Record a timelapse. Explicit --timelapse=false is supported. |
+| `--no-timelapse` | bool | false | Disable recording for this print. Cannot combine with --timelapse. |
 | `--wait` | time.Duration | 180s | How long to wait for the job to start. |
 
 ### `bambu print stop`
@@ -171,9 +172,9 @@ Show one recipe.
 
 Dump the command tree as JSON for agents.
 
-### `bambu slice <model>`
+### `bambu slice <model>...`
 
-Slice a model headlessly with Bambu Studio and a recipe.
+Slice separate models on one plate using Bambu Studio and a recipe. Studio arranges batches with at least 3 mm between objects. Stored orientation is kept unless --auto-orient is explicit.
 
 | flag | type | default | help |
 |---|---|---|---|
@@ -184,6 +185,7 @@ Slice a model headlessly with Bambu Studio and a recipe.
 | `--set, -s` | []string |  | Override a Bambu Studio setting: key=value (repeatable). |
 | `--name, -n` | string |  | Output base name (default <model>-<recipe>). |
 | `--out, -o` | string |  | Output directory (default: config output_dir, else current dir). |
+| `--part-spacing` | float64 | 3 | Minimum spacing between batch objects in mm; must be finite and at least 3. |
 | `--auto-orient` | bool |  | Let the slicer re-orient the model (default: keep the model's orientation). |
 
 ### `bambu slicer info`
