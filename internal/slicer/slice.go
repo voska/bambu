@@ -42,9 +42,8 @@ var CLIErrors = map[int]string{
 
 // Request is one slice job.
 type Request struct {
-	Models        []string // separate model files; Model remains for single-input callers
+	Models        []string
 	PartSpacingMM float64
-	Model         string
 	Recipe        recipe.Recipe
 	MachinePreset string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
 	Plate         string    // installed plate id, e.g. "textured_plate"
@@ -352,9 +351,6 @@ type result struct {
 // Run slices req with st and writes outputs into req.OutDir.
 func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, error) {
 	models := req.Models
-	if len(models) == 0 {
-		models = []string{req.Model}
-	}
 	if req.PartSpacingMM == 0 {
 		req.PartSpacingMM = 3
 	}

@@ -226,7 +226,7 @@ func TestRunWithFakeStudio(t *testing.T) {
 	st := &Studio{Binary: bin, Resources: "testdata/resources"}
 	r := recipe.Recipe{Name: "t", Process: "0.20mm Standard", Filament: "Bambu PLA Basic"}
 	rq := req(r)
-	rq.Model, rq.Name, rq.OutDir, rq.WorkDir = model, "part-t", filepath.Join(dir, "out"), filepath.Join(dir, "work")
+	rq.Models, rq.Name, rq.OutDir, rq.WorkDir = []string{model}, "part-t", filepath.Join(dir, "out"), filepath.Join(dir, "work")
 	sum, err := Run(context.Background(), st, index(t), rq)
 	if err != nil {
 		t.Fatal(err)
@@ -252,9 +252,9 @@ func TestRunWithFakeStudio(t *testing.T) {
 		t.Fatalf("failure mapping: %+v", e)
 	}
 
-	rq.Model = filepath.Join(dir, "part.step")
+	rq.Models = []string{filepath.Join(dir, "part.step")}
 	rq.StepPython = filepath.Join(dir, "missing-python")
-	_ = os.WriteFile(rq.Model, []byte("ISO-10303-21;"), 0o600)
+	_ = os.WriteFile(rq.Models[0], []byte("ISO-10303-21;"), 0o600)
 	if _, err := Run(context.Background(), st, index(t), rq); errfmt.As(err).Code != errfmt.ExitConfig {
 		t.Fatalf("STEP needs a CadQuery interpreter: %v", err)
 	}
@@ -319,7 +319,7 @@ func twoFilamentRun(t *testing.T, mut func(*Request)) (*Summary, Request, error)
 	model := filepath.Join(dir, "part.3mf")
 	_ = os.WriteFile(model, []byte("PK"), 0o600)
 	rq := req(recipe.Recipe{Name: "t", Process: "0.20mm Standard", Filament: "Bambu PLA Basic"})
-	rq.Model, rq.Name, rq.OutDir, rq.WorkDir = model, "two", filepath.Join(dir, "out"), filepath.Join(dir, "work")
+	rq.Models, rq.Name, rq.OutDir, rq.WorkDir = []string{model}, "two", filepath.Join(dir, "out"), filepath.Join(dir, "work")
 	rq.Filaments, rq.Colors, rq.ChangeZs = []string{"Generic PLA", "Bambu PLA Basic"}, []string{"ffffff", "#000000"}, []float64{4.0}
 	if mut != nil {
 		mut(&rq)
