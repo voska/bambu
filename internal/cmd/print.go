@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/kong"
+
 	"github.com/voska/bambu/internal/config"
 	"github.com/voska/bambu/internal/errfmt"
 	"github.com/voska/bambu/internal/ftps"
@@ -35,7 +37,7 @@ type PreflightCmd struct {
 
 // Run executes the command.
 func (c *PreflightCmd) Run(g *Globals) error {
-	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, !c.NoFTP, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, !c.NoFTP, c.Strict, false)
 	if err != nil {
 		return err
 	}
@@ -58,7 +60,7 @@ type preflightCtx struct {
 	code   string
 }
 
-func runPreflight(g *Globals, file string, slots, estimates []string, checkFTP, strict bool) (*preflightCtx, error) {
+func runPreflight(g *Globals, file string, slots, estimates []string, checkFTP, strict, requireClearance bool) (*preflightCtx, error) {
 	trays := make([]int, 0, len(slots))
 	for _, slot := range slots {
 		tray, err := printer.ParseSlot(slot)
@@ -96,7 +98,7 @@ func runPreflight(g *Globals, file string, slots, estimates []string, checkFTP, 
 		conn.Close()
 		return nil, err
 	}
-	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict, Remaining: remaining}
+	in := preflight.Input{Printer: p, Job: j, Status: printer.Summarize(raw), TrayIDs: trays, Strict: strict, RequireClearance: requireClearance, Remaining: remaining}
 	if checkFTP {
 		in.FTPSCheck = func() error {
 			ctx, cancel := context.WithTimeout(g.Ctx, 30*time.Second)
@@ -192,7 +194,8 @@ type SendCmd struct {
 	Slot              []string      `short:"s" required:"" sep:"none" help:"AMS slot: 1-4 (first AMS) or A1-D4. Once per filament, in filament order (--slot A4 --slot A1)."`
 	Confirm           bool          `help:"Required to actually print. Only pass it after a human approved this exact file and confirmed the plate is clear."`
 	DryRun            bool          `short:"n" name:"dry-run" help:"Run preflight and show the exact upload path and MQTT payload; send nothing."`
-	Timelapse         bool          `help:"Record a timelapse."`
+	Timelapse         bool          `xor:"timelapse" help:"Record a timelapse (default: on, or [print] timelapse in config)."`
+	NoTimelapse       bool          `xor:"timelapse" help:"Disable timelapse recording for this print."`
 	Wait              time.Duration `default:"180s" help:"How long to wait for the job to start."`
 	Strict            bool          `help:"Require exact filament material and valid temperature bounds (bambu-op operator gates)."`
 	FilamentRemaining []string      `sep:"none" placeholder:"SLOT=Ng" help:"Grams left on a spool you checked, e.g. A2=50g, for this invocation only. Repeat per slot; sufficient estimates WARN (also with --strict), insufficient estimates FAIL."`
@@ -226,12 +229,12 @@ type sendResult struct {
 }
 
 // Run executes the command.
-func (c *SendCmd) Run(g *Globals) error {
+func (c *SendCmd) Run(g *Globals, parsed *kong.Context) error {
 	if !c.DryRun && !c.Confirm {
 		return errfmt.New(errfmt.ExitGate, "refusing to print without --confirm").
 			WithHint("preview with --dry-run; pass --confirm only after a human approved this file and confirmed the plate is clear")
 	}
-	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, true, c.Strict)
+	pc, err := runPreflight(g, c.File, c.Slot, c.FilamentRemaining, true, c.Strict, c.DryRun)
 	if err != nil {
 		return err
 	}
@@ -243,7 +246,21 @@ func (c *SendCmd) Run(g *Globals) error {
 	if err != nil {
 		return errfmt.Wrap(errfmt.ExitError, err, "read %s", pc.job.File)
 	}
-	body := job.ProjectFile(pc.job, remote, pc.result.TrayIDs, c.Timelapse)
+	cfg, err := g.ConfigFile()
+	if err != nil {
+		return err
+	}
+	timelapse := cfg.Print.RecordTimelapse()
+	for _, trace := range parsed.Path {
+		if trace.Flag != nil && trace.Flag.Name == "timelapse" {
+			timelapse = c.Timelapse
+			break
+		}
+	}
+	if c.NoTimelapse {
+		timelapse = false
+	}
+	body := job.ProjectFile(pc.job, remote, pc.result.TrayIDs, timelapse)
 	plan.MQTT.Topic, plan.MQTT.QoS = "device/"+pc.p.Serial+"/request", 1
 	plan.MQTT.Payload = map[string]any{"print": withSeq(body)}
 	res := sendResult{Printer: pc.p.Name, DryRun: c.DryRun, Preflight: pc.result, Plan: plan}

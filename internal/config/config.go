@@ -44,6 +44,14 @@ type Ntfy struct {
 	Topic string `toml:"topic,omitempty"`
 }
 
+// Print holds defaults for print send. A nil Timelapse means enabled.
+type Print struct {
+	Timelapse *bool `toml:"timelapse,omitempty"`
+}
+
+// RecordTimelapse resolves an omitted config key to the default, true.
+func (p Print) RecordTimelapse() bool { return p.Timelapse == nil || *p.Timelapse }
+
 // Config is the whole config file.
 type Config struct {
 	DefaultPrinter string              `toml:"default_printer,omitempty"`
@@ -51,6 +59,7 @@ type Config struct {
 	RecipesDir     string              `toml:"recipes_dir,omitempty"`
 	Slicer         Slicer              `toml:"slicer,omitempty"`
 	Ntfy           Ntfy                `toml:"ntfy,omitempty"`
+	Print          Print               `toml:"print,omitempty"`
 	Printers       map[string]*Printer `toml:"printers,omitempty"`
 
 	path string

@@ -42,6 +42,8 @@ var CLIErrors = map[int]string{
 
 // Request is one slice job.
 type Request struct {
+	Models        []string // separate model files; Model remains for single-input callers
+	PartSpacingMM float64
 	Model         string
 	Recipe        recipe.Recipe
 	MachinePreset string    // e.g. "Bambu Lab X1 Carbon 0.4 nozzle"
@@ -65,6 +67,8 @@ type Summary struct {
 	Recipe          string               `json:"recipe"`
 	Description     string               `json:"recipe_description"`
 	Model           string               `json:"model"`
+	Models          []string             `json:"models"`
+	PartSpacingMM   float64              `json:"part_spacing_mm,omitempty"`
 	Gcode3MF        string               `json:"gcode_3mf"`
 	PreviewPNG      string               `json:"preview_png"`
 	SummaryJSON     string               `json:"summary_json"`
@@ -347,19 +351,35 @@ type result struct {
 
 // Run slices req with st and writes outputs into req.OutDir.
 func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, error) {
-	ext := strings.ToLower(filepath.Ext(req.Model))
-	switch ext {
-	case ".stl", ".3mf", ".obj", ".amf", ".step", ".stp":
-	default:
-		return nil, errfmt.New(errfmt.ExitUsage, "unsupported model type %q", ext).WithHint("use .stl, .3mf or .obj")
+	models := req.Models
+	if len(models) == 0 {
+		models = []string{req.Model}
 	}
-	model, err := filepath.Abs(req.Model)
-	if err != nil {
-		return nil, errfmt.Wrap(errfmt.ExitUsage, err, "resolve model path")
+	if req.PartSpacingMM == 0 {
+		req.PartSpacingMM = 3
 	}
-	if _, err := os.Stat(model); err != nil {
-		return nil, errfmt.New(errfmt.ExitNotFound, "model not found: %s", req.Model)
+	if req.PartSpacingMM < 3 || math.IsNaN(req.PartSpacingMM) || math.IsInf(req.PartSpacingMM, 0) {
+		return nil, errfmt.New(errfmt.ExitUsage, "--part-spacing must be finite and at least 3 mm")
 	}
+	models = append([]string(nil), models...)
+	for i, path := range models {
+		ext := strings.ToLower(filepath.Ext(path))
+		switch ext {
+		case ".stl", ".3mf", ".obj", ".amf", ".step", ".stp":
+		default:
+			return nil, errfmt.New(errfmt.ExitUsage, "unsupported model type %q", ext).WithHint("use .stl, .3mf, .obj, .amf or .step/.stp")
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return nil, errfmt.Wrap(errfmt.ExitUsage, err, "resolve model path")
+		}
+		info, err := os.Stat(abs)
+		if err != nil || info.IsDir() {
+			return nil, errfmt.New(errfmt.ExitNotFound, "model not found: %s", path)
+		}
+		models[i] = abs
+	}
+	model := models[0]
 	colors, err := checkFilaments(req)
 	if err != nil {
 		return nil, err
@@ -417,19 +437,35 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 			return nil, errfmt.Wrap(errfmt.ExitConfig, err, "remove stale slicer output %s", stale)
 		}
 	}
-	src := model
-	if ext == ".step" || ext == ".stp" {
-		src, err = prepareSTEP(ctx, req.StepPython, model, work)
+	sources := append([]string(nil), models...)
+	for i, path := range sources {
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".step" || ext == ".stp" {
+			stepWork := filepath.Join(work, fmt.Sprintf("input-%d", i+1))
+			if err := os.MkdirAll(stepWork, 0o750); err != nil {
+				return nil, errfmt.Wrap(errfmt.ExitConfig, err, "create STEP work dir")
+			}
+			sources[i], err = prepareSTEP(ctx, req.StepPython, path, stepWork)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	arrange := "1"
+	if len(models) > 1 {
+		src, err := arrangeModels(ctx, st, req, cfgs, paths, filPaths, sources, work)
 		if err != nil {
 			return nil, err
 		}
+		sources = []string{src}
+		arrange = "0"
 	}
 	orient := "0"
-	if req.AutoOrient {
+	if req.AutoOrient && len(models) == 1 {
 		orient = "1"
 	}
 	args := []string{
-		"--slice", "0", "--arrange", "1", "--orient", orient,
+		"--slice", "0", "--arrange", arrange, "--orient", orient, "--allow-rotations=0", "--avoid-extrusion-cali-region",
 		"--load-settings", paths["machine"] + ";" + paths["process"], "--load-filaments", strings.Join(filPaths, ";"),
 	}
 	if len(colors) > 0 {
@@ -458,7 +494,8 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 		}
 		args = append(args, "--load-custom-gcodes", paths["custom_gcode"])
 	}
-	args = append(args, "--outputdir", work, "--export-3mf", threemf, src)
+	args = append(args, "--outputdir", work, "--export-3mf", threemf)
+	args = append(args, sources...)
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, st.Binary, args...) //nolint:gosec // discovered slicer binary, validated args
@@ -498,6 +535,9 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 			WithHint("%s; fix the recipe/--set values; log: %s", or(CLIErrors[res.ReturnCode], "see log"), logPath).
 			WithData("return_code", res.ReturnCode).WithData("details", details).WithData("log", logPath)
 	}
+	if len(models) > 1 && len(res.SlicedPlates) != 1 {
+		return nil, errfmt.New(errfmt.ExitSliceFailed, "batch must fit on one plate; slicer produced %d plates", len(res.SlicedPlates)).WithHint("split the batch or reduce model sizes; no outputs published")
+	}
 	warnings := []string{}
 	for _, p := range res.SlicedPlates {
 		if p.WarningMessage != "" {
@@ -511,6 +551,15 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 	}
 	if err := checkChanges(filepath.Join(work, threemf), tops, logPath); err != nil {
 		return nil, err
+	}
+	if len(models) > 1 {
+		arrangedJob, err := job.Inspect(filepath.Join(work, threemf), 1)
+		if err != nil {
+			return nil, err
+		}
+		if len(arrangedJob.Objects) < len(models) {
+			return nil, errfmt.New(errfmt.ExitSliceFailed, "batch lost objects: %d inputs but only %d plate objects", len(models), len(arrangedJob.Objects)).WithHint("check the slicer log; no outputs published")
+		}
 	}
 	png := filepath.Join(out, name+".png")
 	if err := extract(filepath.Join(work, threemf), "Metadata/plate_1.png", png); err != nil {
@@ -528,7 +577,7 @@ func Run(ctx context.Context, st *Studio, ix *Index, req Request) (*Summary, err
 		return nil, err
 	}
 	sum := &Summary{
-		Name: name, Recipe: req.Recipe.Name, Description: req.Recipe.Description, Model: model,
+		Name: name, Recipe: req.Recipe.Name, Description: req.Recipe.Description, Model: model, Models: models, PartSpacingMM: req.PartSpacingMM,
 		Gcode3MF: final, PreviewPNG: png, SummaryJSON: filepath.Join(out, name+".summary.json"),
 		TimeS: j.PredictionS, Time: j.TotalTime, WeightG: j.WeightG, Layers: j.Layers, Filaments: j.Filaments,
 		FilamentChanges: j.FilamentChanges, FilamentPresets: cfgs.FilamentPresets,

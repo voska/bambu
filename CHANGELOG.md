@@ -7,6 +7,9 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- Multi-model `slice` keeps separate objects and stored orientation, using Studio's arrange with `--part-spacing` (default/minimum 3 mm). Batches must fit on one plate. Summaries add `models` and `part_spacing_mm`; `model` remains the first input.
+- X1C `start_line_clearance` preflight gate checks first-layer object lines and arcs against the front startup zones with a 1 mm margin. Collisions fail; unverified toolpaths fail in strict mode and send dry runs. Job JSON adds `first_layer_clearance` evidence.
+- `[print] timelapse` sets the recording default (on when omitted). `print send --no-timelapse` opts out for one print; the existing `--timelapse` explicitly opts in.
 - `ams set` records non-RFID spool metadata while idle, with physical filament detection, confirmation, dry-run support, and verified read-back. Status trays include nullable `present` physical detection without changing `loaded`.
 - Repeatable `--filament-remaining A2=50g` on `preflight` and `print send` for a checked spool when AMS remaining telemetry is wrong. Sufficient estimates WARN with the stated amount and original AMS reading; insufficient estimates still FAIL against the existing 15% + 5 g reserve, including with `--strict`. Estimates apply only to the current invocation. JSON amount gates include an optional `operator_estimate` with both sources and the required grams.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
@@ -25,6 +28,7 @@ JSON field names and exit codes are part of the public API.
   - job: `filament_changes`
 
 ### Changed
+- `print send` records a timelapse by default.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed

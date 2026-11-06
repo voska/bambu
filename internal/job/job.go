@@ -62,6 +62,7 @@ type FilamentChange struct {
 
 // Job is what bambu needs to know about a sliced plate.
 type Job struct {
+	FirstLayer      Clearance        `json:"first_layer_clearance"`
 	File            string           `json:"file"`
 	Plate           int              `json:"plate"`
 	GcodeParam      string           `json:"gcode_param"`
@@ -162,6 +163,7 @@ func Inspect(path string, plate int) (*Job, error) {
 		j.TotalTime = strings.TrimSpace(m[1])
 	}
 	j.FilamentChanges = FilamentChanges(gcode)
+	j.FirstLayer = FirstLayerClearance(gcode)
 
 	ps := map[string]any{}
 	if b, ok := read("Metadata/project_settings.config"); ok {

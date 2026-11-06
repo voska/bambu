@@ -50,9 +50,9 @@ Top-level verbs are kept for the high-frequency, single-purpose actions an opera
 
 ```
 bambu status [--watch]                       # read-only; --watch streams NDJSON until Ctrl-C
-bambu slice <model> --recipe R [--filament PRESET] [--set k=v]... [--name N] [--out DIR] [--auto-orient]
+bambu slice <model>... --recipe R [--part-spacing 3] [--filament PRESET] [--set k=v]... [--name N] [--out DIR] [--auto-orient]
 bambu preflight <file.gcode.3mf> --slot S [--slot S2]... [--no-ftp]
-bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm) [--timelapse] [--wait 180s]
+bambu print send <file.gcode.3mf> --slot S [--slot S2]... (--dry-run | --confirm) [--timelapse | --no-timelapse] [--wait 180s]
 bambu print pause|stop --confirm
 bambu print resume --confirm [--wait 30s]     # exit 0 only once the printer reports RUNNING
 bambu filament load --slot S --confirm [--timeout 5m]  # paused or idle; exit 0 only once S is in the toolhead
@@ -155,7 +155,7 @@ Precedence:
 {"print":{"sequence_id":"<n>","command":"project_file","param":"Metadata/plate_1.gcode",
  "url":"file:///sdcard/<name>.gcode.3mf","subtask_name":"<name>","md5":"<md5 of Metadata/plate_1.gcode>",
  "project_id":"0","profile_id":"0","task_id":"0","subtask_id":"0","bed_type":"auto",
- "timelapse":false,"bed_leveling":true,"flow_cali":true,"vibration_cali":true,"layer_inspect":true,
+ "timelapse":true,"bed_leveling":true,"flow_cali":true,"vibration_cali":true,"layer_inspect":true,
  "use_ams":true,"ams_mapping":[<tray id per project filament, -1 unused>]}}
 ```
 
@@ -202,6 +202,15 @@ Missing or malformed detection remains unknown, rather than evidence of an empty
 - Informational codes are an allowlist (`0C00_0300_0003_000B` "Inspecting first layer") plus severity `info`. `errors.blocking` is true when there is a `print_error` or any non-informational HMS code.
 
 ## 8. Slicing
+
+Multiple inputs stay separate objects. Studio arranges with rotations disabled and
+`--orient 0` unless explicitly requested. `--part-spacing` defaults to 3 mm and
+must be finite and at least 3. Studio's CLI exposes spacing through sequential
+object clearance, so a batch first exports an arrange-only project using that
+clearance, then slices with the original machine/process presets, `--arrange 0`
+and `--orient 0`. Temporary sequential settings never reach the sliced file.
+A batch requiring multiple sliced plates fails before publishing. `model` in the
+summary remains the first input; `models` lists all absolute input paths.
 
 **Slicer discovery**, in order:
 1. `BAMBU_STUDIO_PATH` / `slicer.path`
@@ -334,3 +343,18 @@ internal/errfmt/             exit codes, typed errors with hints
 4. 3MF inspection + preflight + payload; `print send --dry-run`.
 5. FTPS client; `print send`, control commands; `monitor`, `camera`.
 6. Discovery, schema, docs, site, skill, release config.
+
+### Recording defaults and X1C startup clearance
+
+`print send` resolves timelapse as explicit `--timelapse` / `--no-timelapse`, then
+`[print] timelapse`, then true. Giving both flags is a usage error. Config saves
+preserve an explicit false; the MQTT `timelapse` field remains boolean.
+
+`job.first_layer_clearance` reports verified status, object extrusion and collision
+counts, the 1 mm margin, and an optional unverified reason. The parser follows
+layer-1 `OBJECT_ID` markers, G90/G91 XY, M82/M83 E, G92 E resets and G0/G1/G2/G3
+paths (relative I/J arc centres). Startup, travel, retractions and non-object
+paths are excluded. X1C `start_line_clearance` fails intersections with X18–240,
+Y0–12 or X0–18, Y0–28, expanded by 1 mm. Missing markers or unsupported object
+arcs are NOT VERIFIED: WARN normally, FAIL in strict mode or send dry runs.
+Other printer models do not acquire these X1C zones.

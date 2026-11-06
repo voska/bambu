@@ -45,7 +45,7 @@ Repeating the same settings published nothing. Other printer models remain unver
 {"print":{"sequence_id":"<n>","command":"project_file","param":"Metadata/plate_1.gcode",
  "url":"file:///sdcard/<name>.gcode.3mf","subtask_name":"<name>","md5":"<md5 of Metadata/plate_1.gcode>",
  "project_id":"0","profile_id":"0","task_id":"0","subtask_id":"0","bed_type":"auto",
- "timelapse":false,"bed_leveling":true,"flow_cali":true,"vibration_cali":true,"layer_inspect":true,
+ "timelapse":true,"bed_leveling":true,"flow_cali":true,"vibration_cali":true,"layer_inspect":true,
  "use_ams":true,"ams_mapping":[3]}}
 ```
 
