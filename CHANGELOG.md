@@ -7,6 +7,7 @@ JSON field names and exit codes are part of the public API.
 ## [Unreleased]
 
 ### Added
+- `ams set` records non-RFID spool metadata while idle, with physical filament detection, confirmation, dry-run support, and verified read-back. Status trays include nullable `present` physical detection without changing `loaded`.
 - Repeatable `--filament-remaining A2=50g` on `preflight` and `print send` for a checked spool when AMS remaining telemetry is wrong. Sufficient estimates WARN with the stated amount and original AMS reading; insufficient estimates still FAIL against the existing 15% + 5 g reserve, including with `--strict`. Estimates apply only to the current invocation. JSON amount gates include an optional `operator_estimate` with both sources and the required grams.
 - Operator parity with `bambu-op`: verified `light status|on|off`, chamber-light telemetry, and `--light` snapshots that restore the previous light mode even on failure or interruption.
 - Monitor `--notify` with optional `[ntfy]` configuration and keychain/stdin token storage (`auth set --ntfy`), `--watch` for continuous monitoring, configurable `--interval`/`--pushall-every`, and full final status/snapshot/exit-code data.
@@ -27,6 +28,7 @@ JSON field names and exit codes are part of the public API.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed
+- Preflight distinguishes present but untyped AMS trays from empty slots and points to `bambu ams set` to configure the physical spool. Unknown detection is reported as unknown; the tray gate and exit codes are unchanged.
 - `slice --strict` rejects slicer warnings, including floating regions, with exit 11 before publishing new output files. JSON errors include the warnings and slicer log path; slicing without `--strict` still reports warnings in the summary.
 - `slice --set` now preserves JSON list values, including commas inside quoted entries; comma-separated batches and repeated overrides remain supported.
 - `print pause` and `print stop` now verify PAUSE or an idle state before exiting 0; `--wait` defaults to 30s and must be positive.

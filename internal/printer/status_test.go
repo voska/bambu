@@ -57,6 +57,51 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+func TestTrayPresenceIndependentOfMaterial(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		bits    any
+		present string
+	}{
+		{"present untyped", "4", "true"},
+		{"empty", "0", "false"},
+		{"unknown", nil, "null"},
+		{"malformed", "not-hex", "null"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := load(t)
+			ams := raw["ams"].(map[string]any)
+			ams["tray_exist_bits"] = tc.bits
+			unit := ams["ams"].([]any)[0].(map[string]any)
+			unit["tray"].([]any)[2] = map[string]any{"id": "2"}
+			tr := Summarize(raw).AMS[2]
+			if tr.Loaded || tr.Type != "" || tr.Slot != "A3" {
+				t.Fatalf("untyped tray contract changed: %+v", tr)
+			}
+			b, err := json.Marshal(tr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(b, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if string(fields["present"]) != tc.present || string(fields["loaded"]) != "false" {
+				t.Fatalf("physical presence must not change loaded: %s", b)
+			}
+		})
+	}
+	// B2 is global tray 5, so its detection bit is 0x20 rather than local bit 0x02.
+	raw := map[string]any{"ams": map[string]any{
+		"tray_exist_bits": "20",
+		"ams":             []any{map[string]any{"id": "1", "tray": []any{map[string]any{"id": "1"}}}},
+	}}
+	tr := Summarize(raw).AMS[0]
+	if tr.Slot != "B2" || tr.Present == nil || !*tr.Present {
+		t.Fatalf("second AMS unit presence: %+v", tr)
+	}
+}
+
 func TestLiveviewReportedState(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

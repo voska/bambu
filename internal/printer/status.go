@@ -74,6 +74,7 @@ type Tray struct {
 	Slot       string `json:"slot"`
 	TrayID     int    `json:"tray_id"`
 	Loaded     bool   `json:"loaded"`
+	Present    *bool  `json:"present"` // physical detection, independent of material metadata; nil when unknown
 	Type       string `json:"type,omitempty"`
 	FilamentID string `json:"filament_id,omitempty"`
 	Name       string `json:"name,omitempty"`
@@ -188,7 +189,10 @@ func Summarize(p map[string]any) Status {
 		unit := num(am["id"])
 		for _, t := range list(am["tray"]) {
 			tm := obj(t)
-			s.AMS = append(s.AMS, tray(unit*4+num(tm["id"]), tm))
+			id := unit*4 + num(tm["id"])
+			tr := tray(id, tm)
+			tr.Present = TrayPresent(p, id)
+			s.AMS = append(s.AMS, tr)
 		}
 	}
 	s.External = str(obj(p["vt_tray"])["tray_type"])

@@ -63,7 +63,7 @@
     "mainEntity": [
       { "@type": "Question", "name": "What is the bambu CLI?", "acceptedAnswer": { "@type": "Answer", "text": "bambu is a free, open-source command-line tool that slices models with the Bambu Studio CLI, checks the printer with safety gates, sends jobs over the local network and monitors them, for Bambu Lab printers in LAN mode with Developer Mode enabled." } },
       { "@type": "Question", "name": "How do I install bambu?", "acceptedAnswer": { "@type": "Answer", "text": "brew install voska/tap/bambu, or go install github.com/voska/bambu/cmd/bambu@latest, or download a binary from GitHub Releases." } },
-      { "@type": "Question", "name": "Can AI agents use bambu safely?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every command has --json output and stable exit codes, print send requires --confirm plus a passing preflight, --dry-run shows the exact payload, and no command changes printer settings. Agents should only pass --confirm after a human approves the job and confirms the plate is clear." } },
+      { "@type": "Question", "name": "Can AI agents use bambu safely?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every command has --json output and stable exit codes, print send requires --confirm plus a passing preflight, and --dry-run shows the exact payload. AMS spool metadata edits require --confirm and verified read-back; AI protections and network settings stay read-only. Agents should only pass --confirm after a human approves the action; printing also requires a clear plate." } },
       { "@type": "Question", "name": "Does bambu need Bambu Cloud?", "acceptedAnswer": { "@type": "Answer", "text": "No. It talks to the printer directly over MQTT and FTPS on your LAN. Since the 2025 Authorization Control firmware, sending jobs from third-party tools requires LAN Only mode with Developer Mode, which disconnects the printer from Bambu Cloud." } }
     ]
   }
@@ -200,7 +200,7 @@ bambu monitor --json           <span class="d"># NDJSON; exit 0 finish · 12 fai
     <h2>FAQ</h2>
     <details><summary>Does it work without Developer Mode?</summary><p>Status does. Sending, pausing and stopping need Developer Mode: since the January 2025 "Authorization Control" firmware, printers reject unsigned third-party commands. Developer Mode disconnects Bambu Cloud and the Handy app.</p></details>
     <details><summary>Which printers are supported?</summary><p>Tested on an X1 Carbon. The X1, X1E, P1, A1, H2 and P2S series share the LAN protocol and should work; camera snapshots currently need an RTSPS camera (X1/H2/P2S series).</p></details>
-    <details><summary>Will it change my printer settings?</summary><p>No. There is no command that changes settings. Filament, plate and toggles are up to you.</p></details>
+    <details><summary>Will it change my printer settings?</summary><p><code>ams set</code> records the material in a non-RFID spool while idle, with <code>--confirm</code> and verified read-back. Identify the physical spool first. AI protections and network settings stay read-only.</p></details>
     <details><summary>Is this affiliated with Bambu Lab?</summary><p>No. It's an independent MIT-licensed project that builds on public protocol documentation (OpenBambuAPI, ha-bambulab).</p></details>
   </div></section>
 

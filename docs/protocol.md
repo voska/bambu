@@ -14,6 +14,31 @@ September 2026).
 - **AMS state:** `print.ams_status >> 8` is Bambu Studio's `AmsStatusMain`: `0x00` idle, `0x01` filament_change, `0x02` rfid_identifying, `0x03` assist (resting, filament loaded), `0x04` calibration, `0x07` cold_pull, `0x10` self_check, `0x20` debug. `ams.tray_now` is the tray in the toolhead (`255` none, `254` external spool). A G-code pause (`M400 U1`) reports `PAUSE` with `print_error` `0300_8013`. (verified)
 - **Filament load:** `{"print":{"sequence_id":"<n>","command":"ams_change_filament","ams_id":A,"slot_id":S,"target":A*4+S,"curr_temp":T1,"tar_temp":T2}}`, as Studio's `command_ams_change_filament` sends it. Each temperature is the middle of that tray's `nozzle_temp_min`/`max` (Studio's default is 210). The printer cuts and unloads, loads the target and purges: `ams_status` goes `filament_change`, then `tray_now` becomes the target and `ams_status` returns to `assist`. (verified on an X1 Carbon during a pause, 2026-10-08: A4 → A1, then `resume` → RUNNING, and the print finished cleanly.)
 
+## AMS spool metadata: `print.ams_filament_setting`
+
+Matches Bambu Studio's `DeviceManager.cpp::command_ams_filament_settings`:
+
+```json
+{"print":{"sequence_id":"<n>","command":"ams_filament_setting",
+ "ams_id":0,"slot_id":0,"tray_id":0,"tray_info_idx":"GFL99","setting_id":"",
+ "tray_type":"PLA","tray_color":"C8A26BFF","nozzle_temp_min":200,"nozzle_temp_max":230}}
+```
+
+`ams_id` names the unit; `slot_id` and `tray_id` are local indices (0–3).
+Colors are RGBA. The command sends an empty `setting_id`; its effect is unverified
+and it is not included in the read-back guarantee. Metadata is
+verified through fresh `pushall` tray reports, comparing all five fields; the
+command acknowledgement does not establish success. `tray_exist_bits` is the
+hexadecimal physical filament detection mask, independent of configured type.
+RFID spools are refused because their metadata can be restored from the tag.
+This command does not load filament, heat the nozzle, or change flow calibration.
+Temperature bounds affect subsequent filament loads and preflight checks.
+
+Verified on an X1 Carbon on 2026-10-12: an unconfigured non-RFID spool became
+PLA / GFL99 / C8A26BFF / 200–230 °C, confirmed by a separate status connection.
+The other three slots, toolhead selection, and heater targets stayed unchanged.
+Repeating the same settings published nothing. Other printer models remain unverified.
+
 ## Start a job: `print.project_file` (verified)
 
 ```json

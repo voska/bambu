@@ -29,6 +29,7 @@ type CLI struct {
 	Preflight PreflightCmd `cmd:"" help:"Run the safety gates for a sliced file (read-only)."`
 	Print     PrintCmd     `cmd:"" help:"Send and control print jobs."`
 	Filament  FilamentCmd  `cmd:"" help:"AMS filament in the toolhead (remote colour change at a pause)."`
+	AMS       AMSCmd       `cmd:"" help:"Configure the material physically loaded in an AMS slot."`
 	Monitor   MonitorCmd   `cmd:"" help:"Follow the current job until it ends; exit code reflects the outcome."`
 	Camera    CameraCmd    `cmd:"" help:"Printer camera."`
 	Light     LightCmd     `cmd:"" help:"Read or switch the chamber light (verified by read-back)."`
