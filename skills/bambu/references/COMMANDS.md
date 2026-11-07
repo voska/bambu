@@ -201,6 +201,21 @@ Printer status (read-only). --watch streams changes.
 | `--watch, -w` | bool |  | Stream changes (NDJSON with --json) until interrupted. |
 | `--raw` | bool |  | Include the raw merged push_status object (--json only). |
 
+### `bambu timelapse list`
+
+List timelapse videos, newest first. Exit 3 if none.
+JSON: printer and timelapses entries with name, bytes and UTC mtime.
+
+### `bambu timelapse pull [<name>]`
+
+Download one timelapse by name or --latest, using the configured access-code resolver.
+Never overwrites local files or changes printer files. Without -o, saves ./<name>.
+
+| flag | type | default | help |
+|---|---|---|---|
+| `--latest` | bool | | Pull the newest nonempty video (by mtime, then name). |
+| `--output, -o` | string | | Output file, or an existing directory. Never overwrites. |
+
 ### `bambu version`
 
 Print version information.

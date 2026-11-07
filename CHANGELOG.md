@@ -34,6 +34,7 @@ JSON field names and exit codes are part of the public API.
 - `preflight` `single_filament` now fails only when the number of `--slot`s differs from the number of filaments in the plate. Single-filament jobs send the same payload as before.
 
 ### Fixed
+- The bundled skill command reference now includes `timelapse list` and `timelapse pull`, including latest-video selection and output paths.
 - Preflight distinguishes present but untyped AMS trays from empty slots and points to `bambu ams set` to configure the physical spool. Unknown detection is reported as unknown; the tray gate and exit codes are unchanged.
 - `slice --strict` rejects slicer warnings, including floating regions, with exit 11 before publishing new output files. JSON errors include the warnings and slicer log path; slicing without `--strict` still reports warnings in the summary.
 - `slice --set` now preserves JSON list values, including commas inside quoted entries; comma-separated batches and repeated overrides remain supported.
