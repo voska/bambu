@@ -111,7 +111,8 @@ func (c *MonitorCmd) Run(g *Globals) error {
 		}
 		lastBlocking = s.Errors.Blocking
 		lastFaults = faults
-		if c.SnapshotAtLayer > 0 && !snapTaken && s.State == "RUNNING" && s.Job.Layer >= c.SnapshotAtLayer {
+		// A new job can report RUNNING before its previous job's layer count resets.
+		if c.SnapshotAtLayer > 0 && !snapTaken && s.State == "RUNNING" && s.Job.Layer >= c.SnapshotAtLayer && s.Job.Layer <= s.Job.TotalLayers {
 			snapTaken = true // one attempt; a failure is reported, not retried
 			if m, _ := model(p); m.Camera != printer.CameraRTSPS {
 				ev := Event{TS: time.Now().Format(time.RFC3339), Event: "message", Message: "snapshot skipped: camera not supported for " + p.Model}
